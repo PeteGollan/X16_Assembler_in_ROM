@@ -1,4 +1,4 @@
-# **Commander X16 Assembler in ROM v0.01**
+# **Commander X16 Assembler in ROM v0.02**
 
 This is the specification for the 65C02 assembler integrated into the Commander X16 ROM.
 
@@ -82,8 +82,8 @@ Pseudo-operations are:
 | .word [values]          | Adds a sequence of words in low/high order (also .dw)                            |
 | .text [string\|byte]    | Sequence of quoted strings (ASCII) or bytes, can be mixed                        |
 | .petscii [string\|byte] | Same as .text, except it interprets quotes strings as mixed case PETSCII         |
-| .fill [count]           | Allocates an area of memory but doesn't assemble anything there                  |
-| .align [value]          | Puts on align byte boundary                                                      |
+| .fill count[,value]     | Allocates an area of memory and optionally fills with specified value (also .ds) |
+| .align value            | Puts on align byte boundary                                                      |
 | .macro name             | Define macro (also name .macro) (see below)                                      |
 
 ## .direct
@@ -93,9 +93,9 @@ will have the new origin. This **can** be used to create relocatable code.
 
 ## .rambank and .rombank
 
-Direct mode (`.direct`) must be enabled to use these operations. When [index] is omitted, the next RAM or ROM bank is selected.
+Direct mode `.direct` must be enabled to use these operations. When [index] is omitted, the next RAM or ROM bank is selected.
 `.rambank` and `.rombank` do **not** change the program counter. This must be done explictly:
-
+	```
 	.direct
 	.rambank $5	; Sets RAM bank to $5
 	*=$A000		; The instructions will be assembled to RAM bank $5, starting at $A000.
@@ -106,6 +106,7 @@ Direct mode (`.direct`) must be enabled to use these operations. When [index] is
 	*=$A010		; The instructions will be assembled to RAM bank $6, starting at $A010.
 	asl
 	sta moo
+	```
 
 ## .object and .noaddr
 
@@ -122,6 +123,29 @@ The `.noaddr` option eliminates the load address and requires `BLOAD`:
 	...
 	BLOAD "moo.bin",8,1,$A000
 
+## .fill
+
+Fill `.fill` accepts a count in the range 0-255 and an optional value parameter, also in the range 0-255.
+
+Fill has two modes of operation:
+
+Prior to code being generated, fill advances the program counter by the given count in .direct and does not write anything to an object file. This is how .fill is used to resever variables in zero page and other locations:
+
+	
+		* = $22		; zero page
+	var1:	.fill 2
+	var2:	.fill 4
+	
+After code has been generated, fill emits the number of bytes specified by count, starting at the program counter. The default fill value is zero, but an optional fill value may be specified:
+
+		* = $1000
+	main:	lda #$5a
+			ldx #$a5
+			rts
+	var5:	.fill 2,$aa		; Produces: $aa $aa
+	var6:	.fill 1			; Produces: $00
+	var7:	.fill 4,$99		; Produces: $99 $99 $99 $99 
+	
 
 ## Macros
 
