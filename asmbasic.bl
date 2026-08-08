@@ -1,0 +1,193 @@
+#autonum 10
+REM
+REM THIS SOURCE CODE IS IN ISO (CTRL-E IN EDIT)
+REM
+REM ---------------------------------------------------------------------------
+REM asmbasic.bl - X16 Assembler in ROM Demo #3
+REM
+REM Pete Wyspianski (AKA Gollan petegollan@outlook.com)
+REM August 2026
+REM Ottawa, Canada
+REM
+REM Demonstration of calling X16 Assembler from a BASIC program.
+REM You are welcome to use this code in any way you wish.
+REM
+REM Demonstrates:
+REM   Calling ASM from BASIC
+REM   Retrieving the result string
+REM   Retrieving the status code
+REM   REtrieving the bytes out count
+REM   Surpressing ASM output
+REM
+REM ---------------------------------------------------------------------------
+
+
+REM---------------------------------------------------------
+REM KERNAL
+REM---------------------------------------------------------
+
+REM These are in RAM BANK 0:
+
+KERNAL_buffer = $BF00
+
+ASM_BCD  = $BFFB : REM BYTES OUT (3 bytes)
+
+ASM_EC = $BFFE : REM ERROR CODE
+ASM_CC = $BFFF : REM CHECK CODE
+
+ASM_MB1 = $FA : REM Magic bytes to supress output
+ASM_MB2 = $FB
+
+
+REM --------------------------------------------------------
+REM ASM Response Codes
+REM --------------------------------------------------------
+RC_SUCCESS = $00 : REM Success
+
+ 
+REM---------------------------------------------------------
+REM Control Codes
+REM---------------------------------------------------------
+
+ISO_ON  = $0F
+ISO_OFF = $8F
+
+REM---------------------------------------------------------
+REM Main
+REM---------------------------------------------------------
+
+print chr$(ISO_ON);"Asm BASIC Demo (AD3) V1"
+print
+
+input"Asm file name";f$
+input"Surpress output (Y/n)";s$
+
+so_flag=1
+if len(s$)=0 then so_flag = 1:goto call_asm
+
+a$=left$(s$,1)
+if a$="n" then so_flag=0:goto call_asm
+if a$="N" then so_flag=0
+
+
+call_asm:
+
+
+  REM Clear the output surpression bytes:
+
+  bank 0
+  poke ASM_EC,$FF
+  poke ASM_EC+1,$FF
+  
+  if (so_flag = 0) then call_asm1
+
+  REM Set the output suppression bytes:
+
+  bank 0
+  print "Asm output will be surpressed."
+  poke ASM_EC,ASM_MB1
+  poke ASM_EC+1,ASM_MB2
+
+
+call_asm1:
+
+  print"Calling ASM with ";f$;"..."
+  print
+  asm f$
+  gosub asm_response
+
+  print
+  print"Response code   :$";hex$(aec);
+
+  if (aec = RC_SUCCESS) then print" (success)";
+  print
+
+  print"Response string :";ar$
+  if (aec = RC_SUCCESS) then print"Bytes out string:";arb$
+  print
+
+end_of_run:
+  print"End of run. Have a nice day."
+  end
+
+
+REM---------------------------------------------------------
+REM asm_response
+REM Returns the ASM response string in ar$ and status in aec
+REM If success, retrieves the "bytes out" string in arb$.
+REM---------------------------------------------------------
+REM  
+
+asm_response:
+  bank 0
+  aec = peek(ASM_EC): REM Asm error code
+  acc = peek(ASM_CC): REM Asm check code
+
+
+  REM-------------------------------------------------- 
+  REM Validating the error code is optional. Doing so
+  REM confirms that ASM is working correctly, that
+  REM the aec is valid and that the response string
+  REM is reliable.
+  REM
+  REM acc is the one's complement of aec, so not(acc)
+  REM should equal aec if it is valid.
+  REM---------------------------------------------------
+
+  if (not(acc) = aec) goto aec_valid
+  
+  REM aec is NOT valid, so this demo just prints a message.
+  print"Response code is NOT valid".
+
+aec_valid:
+  ar$=""
+  ari=0 : REM index
+
+ars_nextchar:
+  arc=peek(KERNAL_buffer+ari)
+  if (arc=0) then ars_cont : TAKEN IF NULL FOUND
+  ar$=ar$+chr$(arc)
+  ari=ari+1
+  if (ari < 80) goto ars_nextchar 
+
+ars_cont:
+
+
+  REM-------------------------------------------------- -----------
+  REM The bytes out count is provided as three packed BCD bytes.
+  REM This code will put in into a string and it could be
+  REM converted to an integer if required.
+  REM The BCD byte order for a six digit number 543210 is:
+  REM    10 32 54
+  REM-------------------------------------------------------------- 
+
+
+  arb$=""
+  if (aec <> RC_SUCCESS) goto ar_exit
+
+
+  REM--------------------------------------------------------
+  REM Convert each packed BCD byte to a pair of text digits:
+  REM--------------------------------------------------------
+
+  for i=0 to 2
+    ar_m$= chr$(((peek(asm_BCD+i) AND $F0)/16)+48)
+    ar_l$= chr$((peek(asm_BCD+i) AND $0F)+48)
+    arb$=ar_m$+ar_l$+arb$
+  next
+
+
+  REM Remove the leading zeros from the arb$ string:
+
+ar_next:
+  
+  if (len(arb$) = 1) goto ar_exit
+  if left$(arb$,1) <> "0" goto ar_exit
+  arb$=right$(arb$,len(arb$)-1)
+  goto ar_next
+
+
+ar_exit:
+  return
+
+

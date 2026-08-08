@@ -1,4 +1,3 @@
-```
 +--------------------------------------+
 | Commander X16 Assembler in ROM v0.03 |
 +--------------------------------------+
@@ -110,9 +109,9 @@ Pseudo-operations are:
 |-------------------------|----------------------------------------------------------------------------------|
 | .direct                 | Enables direct assembly to system RAM, banked RAM, and ROM                       |
 | .rambank [index]        | Select RAM bank used in direct assembly in the range $A000 to $BFFF (also .bank) |
-| .rombank [index]	      | Select ROM bank used in direct assembly in the range $C000 to $FFFF              |
+| .rombank [index]	  | Select ROM bank used in direct assembly in the range $C000 to $FFFF              |
 | .object  "file"         | Enables assembly output to the specified file (also .obj)                        |
-| .noaddr	              | Omits the address header in the .object file                                     |
+| .noaddr	          | Omits the address header in the .object file                                     |
 | .include "file"         | Include a source file                                                            |
 | .binary "file"          | Include binary file (also .incbin)                                               |
 | .list "file"            | Enables listing output to the specified file                                     |
@@ -308,36 +307,36 @@ The assembler makes the text of the response string available to a BASIC program
 +--------------------------+
 
 +-----+---------------------------------------------------------+
-|Code |                   Error            			            |
+|Code |                   Error            			|
 |-----|---------------------------------------------------------|
-| $00 | Assembly success (not an error)     			        |
-| $01 | General syntax error					                |
-| $02 | Bad identifier, missing/too long			            |
-| $03 | Divide by zero						                    |
-| $04 | Value of an identifier has changed			            |
-| $05 | Source file not found					                |
-| $06 | Undefined identifier					                |
-| $07 | Relative branch range					                |
-| $08 | Address mode not supported in 65C02			            |
-| $09 | Bad expression						                    |
-| $0A | Line too long						                    |
-| $0B | Too many macro parameters				                |
-| $0C | Bad expansion parameter					                |
-| $0D | Out of memory						                    |
-| $0E | Object file error (open or write)			            |
-| $0F | Object file already specified (multiple .obj) 		    |
-| $10 | List file error (open or write)				            |
-| $11 | List file already specified (multiple .list)		    |
-| $12 | Direct assembly address out of range			        |
-| $13 | .bank requires .direct 					                |
-| $14 | .rombank requires .direct 				                |
-| $15 | Bank number out of range (for RAM or ROM banks)		    |
+| $00 | Assembly success (not an error)     			|
+| $01 | General syntax error					|
+| $02 | Bad identifier, missing/too long			|
+| $03 | Divide by zero						|
+| $04 | Value of an identifier has changed			|
+| $05 | Source file not found					|
+| $06 | Undefined identifier					|
+| $07 | Relative branch range					|
+| $08 | Address mode not supported in 65C02			|
+| $09 | Bad expression						|
+| $0A | Line too long						|
+| $0B | Too many macro parameters				|
+| $0C | Bad expansion parameter					|
+| $0D | Out of memory						|
+| $0E | Object file error (open or write)			|
+| $0F | Object file already specified (multiple .obj) 		|
+| $10 | List file error (open or write)				|
+| $11 | List file already specified (multiple .list)		|
+| $12 | Direct assembly address out of range			|
+| $13 | .bank requires .direct 					|
+| $14 | .rombank requires .direct 				|
+| $15 | Bank number out of range (for RAM or ROM banks)		|
 | $16 | .rambank required for direct assembly to $A000-$BFFF	|
 | $17 | .rombank required for direct assembly to $C000-$FFFF	|
-| $18 | .macro requires an identifier				            |
-| $19 | .macro identifier already exists			            |
-| $1A | Too many nested files					                |
-|.....|.......							                        |
-| $E1 | Source file not specified (e.g. ASM"")			        |
+| $18 | .macro requires an identifier				|
+| $19 | .macro identifier already exists			|
+| $1A | Too many nested files					|
+|.....|.......							|
+| $E1 | Source file not specified (e.g. ASM"")			|
 +-----+---------------------------------------------------------+
-```
+
