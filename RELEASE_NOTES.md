@@ -48,7 +48,7 @@ This repository contains demo KERNAL ROMs that have the X16-Assembler in ROM int
 
 ## How to Use the KERNAL ROMs
 
-Rename either stock or Calypso ROM to ROM1.bin and use CX16-Update to flash your CX16/OtterX.
+Rename either stock or Calypso ROM to ROM.bin and use CX16-Update to flash your CX16/OtterX.
 
 If you have a development system with a ZIF socket, you can create a ROM with a programmer.
 
