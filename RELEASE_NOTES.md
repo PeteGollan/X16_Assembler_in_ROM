@@ -6,7 +6,7 @@ This repository contains demo KERNAL ROMs that have the X16-Assembler in ROM int
 
 |        File        |                                     Description                                       |
 |--------------------|---------------------------------------------------------------------------------------|
-|**r49_th.bin**      | Stock KERNAL ROM with Assembler, test version "h"                                     |
+|**r49_th1.bin**      | Stock KERNAL ROM with Assembler, test version "h"                                     |
 |**r49cwd_th.bin**   | KERNAL ROM with Assembler plus Calypso support with driver (cwd), test version "h"    |
 |**ad1.asm**         | Assembler demo #1                                                                     |
 |**asmbasic.bl**     | BASLOAD program demonstrates interacting with ASM from a BASIC program                | 
