@@ -1,15 +1,14 @@
 +--------------------------------------+
-| Commander X16 Assembler in ROM v0.03 |
+| Commander X16 Assembler in ROM v0.04 |
 +--------------------------------------+
-        Released August 7, 2026        
+        Released September 4, 2026        
 
 This is the manual for the 65C02 assembler integrated into the Commander X16 ROM.
 
 The Commander X16 Assembler was written by Paul Robson (paul@robsons.org.uk) and published as MIT open source on Codeburg:
-
 https://codeberg.org/paulscottrobson/x16-assembler
 
-The assembler was integrated into ROM and had new features and pseudo-ops added by Pete Wyspianski (AKA Gollan petegollan@outlook.com)
+The Assembler in ROM project is the work of Pete Wyspianski (AKA Gollan petegollan@outlook.com)
 
 The source code for the integrated assembler will be published before it is officially released.
 
@@ -33,18 +32,26 @@ Labels and identifiers are limited to 20 characters. Line lengths are limited to
 
 Expressions support the following using 16 bits :
 
-- Binary operators with standard precedence : + - * / % & (and) | (or) ^ (exclusive or) >> << (shift right/left)
-- Unary operators : - (parenthesis) * (program counter) > and < (lower and upper 8 bits), !label (returns bank number associated with the label or undefined)
-- Terms : label, decimal, $[hexadecimal] %[binary] ‘[character code]’
+Binary operators with standard precedence:
+  + - * / % & (and) | (or) ^ (exclusive or) >> << (shift right/left)
+
+Unary operators:
+ - (parenthesis) * (program counter) > and < (lower and upper 8 bits),
+ !label (returns bank number associated with the label or undefined)
+
+Terms:
+label, decimal, $[hexadecimal] %[binary] '[character code]'
 
 
 +--------+
 | Labels |
 +--------+
 
-A global label consists of an alphabetic character followed by a sequence of alphanumeric characters, underscore, at sign, and period. It may have a colon (:) at the end.
+A global label consists of an alphabetic character followed by a sequence of alphanumeric characters, underscore,
+at sign, and period. It may have a colon (:) at the end.
 
-Labels beginning with underscore (_) or at sign (@) are "local labels" and only have scope between two global labels. Macro names are considered global labels.
+Labels beginning with underscore (_) or at sign (@) are "local labels" and only have scope between two global
+labels. Macro names are considered global labels.
 
 A solitary global label is assigned the value of program counter.
 
@@ -59,18 +66,20 @@ Labels/identifiers can be anywhere on a line if ONE of the following is met:
 | Invoking the Assembler |
 +------------------------+
 
-The assembler can be started from EDIT's Programming Toolbox, from the BASIC command line, or from a BASIC program. There are some differences.
+The assembler can be started from EDIT's Programming Toolbox, from the BASIC command line, or from a BASIC
+program. There are some differences.
 
 --------------------------
 EDIT's Programming Toolbox
 --------------------------
 
-With the source code open in EDIT, press ctrl-F to open the Programming Toolbox and then press "A" to start assembly.
+With the source code open in EDIT, press ctrl-F to open the Programming Toolbox and then press "A" to start
+assembly.
 
 When assembling from EDIT, restrictions on direct assembly locations protect EDIT and the system:
 
 	System memory: $0801 to $9EFF
-	RAM banks	 : $02-$09
+	RAM banks	 : $03-$09
 	ROM banks    : $20-$FF
 
 ------------------
@@ -83,7 +92,7 @@ Type:
 When assembling from BASIC, restrictions on direct assembly locations protect the system:
 
 	System memory: $0400 to $9EFF
-	RAM banks	 : $02-$FF
+	RAM banks	 : $03-$FF
 	ROM banks    : $20-$FF
 
 -------------
@@ -104,39 +113,42 @@ Pseudo Operations
 
 Pseudo-operations are:
 
-+-------------------------+----------------------------------------------------------------------------------+
-| Operation               | Function                                                                         |
-|-------------------------|----------------------------------------------------------------------------------|
-| .direct                 | Enables direct assembly to system RAM, banked RAM, and ROM                       |
-| .rambank [index]        | Select RAM bank used in direct assembly in the range $A000 to $BFFF (also .bank) |
-| .rombank [index]	      | Select ROM bank used in direct assembly in the range $C000 to $FFFF              |
-| .object  "file"         | Enables assembly output to the specified file (also .obj)                        |
-| .noaddr	              | Omits the address header in the .object file                                     |
-| .include "file"         | Include a source file                                                            |
-| .binary "file"          | Include binary file (also .incbin)                                               |
-| .list "file"            | Enables listing output to the specified file                                     |
-| .byte [values]          | Adds a sequence of bytes (also .db)                                              |
-| .word [values]          | Adds a sequence of words in low/high order (also .dw)                            |
-| .text [string|byte]     | Sequence of quoted strings (ASCII) or bytes, can be mixed                        |
-| .petscii [string|byte]  | Same as .text, except it interprets quotes strings as mixed case PETSCII         |
-| .fill count[,value]     | Allocates an area of memory and optionally fills with specified value (also .ds) |
-| .align value            | Puts on align byte boundary                                                      |
-| .macro name             | Define macro (also name .macro) (see below)                                      |
-+-------------------------+----------------------------------------------------------------------------------+
++-----------------------+----------------------------------------------------------------------------------+
+| Operation             | Function                                                                         |
+|-----------------------|----------------------------------------------------------------------------------|
+| .direct               | Enables direct assembly to system RAM, banked RAM, and ROM                       |
+| .rambank [index]      | Select RAM bank used in direct assembly in the range $A000 to $BFFF (also .bank) |
+| .rombank [index]	    | Select ROM bank used in direct assembly in the range $C000 to $FFFF              |
+| .object  "file"       | Enables assembly output to the specified file (also .obj)                        |
+| .noaddr	            | Omits the address header in the .object file                                     |
+| .include "file"       | Include a source file                                                            |
+| .binary "file"        | Include binary file (also .incbin)                                               |
+| .list "file"          | Enables listing output to the specified file                                     |
+| .byte [values]        | Adds a sequence of bytes (also .db)                                              |
+| .word [values]        | Adds a sequence of words in low/high order (also .dw)                            |
+| .text [string|byte]   | Sequence of quoted strings (ASCII) or bytes, can be mixed                        |
+| .petscii [string|byte]| Same as .text, except it interprets quoted strings as mixed case PETSCII         |
+| .fill count[,value]   | Allocates an area of memory and optionally fills with specified value (also .ds) |
+| .align value          | Puts on align byte boundary                                                      |
+| .macro name           | Define macro (also name .macro) (see below)                                      |
++-----------------------+----------------------------------------------------------------------------------+
 
 -------
 .direct
 -------
+The .direct option tells the assembler to send object code directly to memory as it is being assembled. It can
+be used on its own to quickly build and test projects.
 
-Direct can be used with .object, caution is advised when changing the program counter (using `*=`) as subsequent code sent to the file
-will have the new origin. This **can** be used to create relocatable code.
+Direct can also be used with .object, but use caution when changing the program counter (using `*=`), as
+subsequent code sent to the file will have the new origin. This **can** be used to create relocatable code.
 
 ---------------------
 .rambank and .rombank
 ---------------------
 
-Direct mode .direct must be enabled to use these operations. When [index] is omitted, the next RAM or ROM bank is selected.
-.rambank and .rombank do **not** change the program counter. This must be done explictly:
+Direct mode (.direct) must be enabled to use these operations. When [index] is omitted, the next RAM or
+ROM bank is selected. Pseudo-ops .rambank and .rombank do **not** change the program counter. This must be done
+explictly:
 
 	.direct
 	.rambank $5	; Sets RAM bank to $5
@@ -153,14 +165,14 @@ Direct mode .direct must be enabled to use these operations. When [index] is omi
 .object and .noaddr
 -------------------
 
-By default, .object (or .obj) creates a file that has an address header and is use with LOAD:
+By default, .object (or .obj) creates a file that has an address header and is used with LOAD:
 
 	Source file: .obj "foo.prg"
 	...
 	LOAD "foo.prg",8,1
 
 
-The .noaddr option eliminates the load address and requires BLOAD:
+With the .noaddr option, the assembler omits the load address and requires BLOAD:
 
 	Source file: .obj "moo.bin"
 	...
@@ -174,14 +186,17 @@ Fill .fill accepts a count in the range 0-255 and an optional value parameter, a
 
 Fill has two modes of operation:
 
-Prior to code being generated, fill advances the program counter by the given count in .direct and does not write anything to an object file. This is how .fill is used to resever variables in zero page and other locations:
+Prior to code being generated, fill advances the program counter by the given count in .direct and does not
+write anything to an object file. This is how .fill is used to resever variables in zero page and other
+locations:
 
 	
 		* = $22		; zero page
 	var1:	.fill 2
 	var2:	.fill 4
 	
-After code has been generated, fill emits the number of bytes specified by count, starting at the program counter. The default fill value is zero, but an optional fill value may be specified:
+After code has been generated, fill emits the number of bytes specified by count, starting at the program
+counter. The default fill value is zero, but an optional fill value may be specified:
 
 		* = $1000
 	main:	lda #$5a
@@ -191,6 +206,35 @@ After code has been generated, fill emits the number of bytes specified by count
 	var6:	.fill 1			; Produces: $00
 	var7:	.fill 4,$99		; Produces: $99 $99 $99 $99 
 	
+--------------------
+.include and .binary
+--------------------
+
+The .include (or .inc) option includes another source file:
+
+	.include "KERNAL_defines.inc"
+	.include "math_library.asm"
+
+Multiple include files can be used. Include files can be nested, up to 6 files deep. The use of .object and
+.list reduce the maximum nesting by one level each.
+
+The .binary (or .incbin) option is used to include binary files into a program. The binary files can be
+pre-assembled modules, graphics, tables, etc.
+
+One common use of .binary is to add a BASIC stub at the beginning of an assembly program so it can be started
+with "RUN":
+
+	* = $801
+	.binary "basic_header.bin"
+
+main:
+	<asm code goes here>
+
+Note about using  .binary (or .incbin) with object files:
+
+  By default, object files start with a two-byte address header. If you are assembling modules to use with
+  .binary, either take the two-byte header into account in the code or use the .noaddr option when assembling
+  these modules.
 
 ------
 Macros
@@ -227,21 +271,28 @@ Macro example:
 | Source Code Character Encoding |
 +--------------------------------+
 
-The assembler can process source code in either ASCII or PETSCII upper case. Typical mixed-case assembly code can be written in ASCII by selecting EDIT's ISO mode.
-In ASCII, identifiers and labels can be in mixed upper/lower case and can include underscore (_), at sign (@) and period (.). The .text pseudo-op is used to produce ASCII strings, and
-the .petscii pseudo-op is used to produce mixed case PETSCII strings.
+The assembler can process source code in either ASCII or PETSCII upper case. Typical mixed-case assembly code
+can be written in ASCII by selecting EDIT's ISO mode. In ASCII, identifiers and labels can be in mixed
+upper/lower case and can include underscore (_), at sign (@) and period (.). The .text pseudo-op is used to
+produce ASCII strings, and the .petscii pseudo-op is used to produce mixed case PETSCII strings.
 
 PETSCII upper case can also be used, but there are some quirks. The underscore is now a PETSCII left arrow (←).
 The .text pseudo-op must be used to produce PETSCII strings, as it doesn't transcode.
 
-PETSCII mixed case can be used to create assembly source code, however identifiers, mnemonics, and pseudo-ops must be written in lower case.
+PETSCII mixed case can be used to create assembly source code, however identifiers, mnemonics, and pseudo-ops
+must be written in lower case.
 
 
 +-----------------+
 | Assembly Errors |
 +-----------------+
 
-The first error stops assembly and produces a message that includes the file name and line number of the error. In EDIT, an error in an include file will show the name and line number of the error file and the EDIT cursor will be placed on the line in the current source file that, ultimately, includes the error file. In other words, in the case of deeply nested include files, the EDIT cursor will be placed on the top include. For file names longer than 32 characters, the assembler splits the displayed file name into two 17-character halves with an asterix (*) in the middle.
+The first error stops assembly and produces a message that includes the file name and line number of the error.
+In EDIT, an error in an include file will show the name and line number of the error file and the EDIT cursor
+will be placed on the line in the current source file that, ultimately, includes the error file. In other words,
+in the case of deeply nested include files, the EDIT cursor will be placed on the top include. For file names
+longer than 32 characters, the assembler splits the displayed file name into two 17-character halves with an
+asterix (*) in the middle.
 
 
 +--------------------+
@@ -250,8 +301,8 @@ The first error stops assembly and produces a message that includes the file nam
 
 Some contemplated future development:
 
-* Performance optimizations
-* Conditional assembly
+* Conditional assembly features
+* Memory optimization for the symbol/indentifier table
 * Support for relocatable code (e.g. ".virtual")
 * Symbol/identifier table listing option
 * .rambank and .rombank increment rollover to the next available bank

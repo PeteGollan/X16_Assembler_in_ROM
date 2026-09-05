@@ -1,0 +1,19 @@
+REM
+REM ASM Delta (asmdelta.bl)
+REM
+REM Display the time delta from the last assembler run
+REM from the BASIC command line
+
+REM 3 bytes, LSB -> MSB
+REM The delta between start and stop RDTIM
+TD = $BFF8
+
+bank 0
+t0=peek(TD)  :REM LSB
+t1=peek(TD+1):REM Mid-B
+t2=peek(TD+2):REM MSB
+
+t=t0+(t1*256)+(t2*65536)
+print "Delta= $";hex$(t2);hex$(t1);hex$(t0)
+print "Time =";t/60;"sec."
+

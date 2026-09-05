@@ -1,4 +1,5 @@
-# **TEST RELEASE of Commander X16 Assembler in ROM v0.03**
+# **TEST RELEASE of Commander X16 Assembler in ROM v0.04**
+September 4th, 2026
 
 This repository contains demo KERNAL ROMs that have the X16-Assembler in ROM integrated.
 
@@ -6,14 +7,28 @@ This repository contains demo KERNAL ROMs that have the X16-Assembler in ROM int
 
 |        File        |                                     Description                                       |
 |--------------------|---------------------------------------------------------------------------------------|
-|**r49_th1.bin**      | Stock KERNAL ROM with Assembler, test version "h"                                     |
-|**r49cwd_th.bin**   | KERNAL ROM with Assembler plus Calypso support with driver (cwd), test version "h"    |
+|**r49_ti.bin**      | Stock KERNAL ROM with Assembler, test version "i"                                     |
 |**ad1.asm**         | Assembler demo #1                                                                     |
-|**asmbasic.bl**     | BASLOAD program demonstrates interacting with ASM from a BASIC program                | 
+|**asmbasic.bl**     | BASLOAD program demonstrates interacting with ASM from a BASIC program                |
+|**asmdelta.bl**     | BASLOAD program demonstrates retrieving assembly time                                 |
+|**asmdelta.prg**    | Compiled version of the program can be used to view assembly time                     |
+|**hello1.asm.bl**   | Sample assembly program to introduce the assembler and CX16 assembly programming      |
+|**basic_header.bin**| BASIC stub for use with .binary (see the .binary section in MANUAL.txt)               |
 |**prev_ROMs**       | Directory contains previously released ROMs                                           |
 |**testing**         | Directory contains programs that were used to test various assembler functions        |
+|**MANUAL.txt**      | The Assembler-in-ROM manual                                                           |
 
   (More assembler demos will be released)
+
+## Changes from the "th" ROMs:
+* Assembler version 0.04
+* Test ROM version "i"
+* NO CALPYSO SUPPORT for this release (See "Calypso Support" below)
+* Significantly improved assembly performance on hardware
+* Assembly time is available when the assembler is called from a BASIC program or the BASIC command line. See asmdelta.bl and asmdelta.prg.
+* Assembler now uses RAM banks 1 and 2
+* Sample program "hello1.asm" is provided as an introduction to CX16 assembly programming
+* The CX16-Assembler manual is now named "MANUAL.txt" and is written in plain text.
 
 ## Changes from the "tg" ROMs:
 * Assembler version 0.03
@@ -52,9 +67,7 @@ Rename either stock or Calypso ROM to ROM.bin and use CX16-Update to flash your 
 
 If you have a development system with a ZIF socket, you can create a ROM with a programmer.
 
-## How to Use ad1.asm:
-
-Copy ad1.asm to your CX16/OtterX
+## How to Use AD1.ASM:
 
 From the BASIC command line:
 ```
@@ -70,7 +83,7 @@ From EDIT:
   * Exit EDIT
   * Type "run"
 
-## How to Use asmbasic.bl:
+## How to Use ASMBASIC.BL:
 
 From the BASIC command line:
 ```
@@ -86,11 +99,40 @@ From EDIT:
   * Exit EDIT
   * Type "run"
 
+## How to Use ASMDELTA.BL:
+
+ASMDELTA is used to display the assembly time in seconds after the assembler is run from the BASIC command line.
+
+From the BASIC command line:
+```
+BASLOAD"ASMDELTA.BL"
+RUN
+```
+Alternatively:
+```
+^ASMDELTA.PRG
+```
+
+
+## Calypso Support
+Calypso support has been omitted for the "ti" release. I am evaluating an incompatibility between the Calypso
+driver and the performance improvements that have been added to the assembler. I will continue Calypso support
+if a reasonable solution can be found.
+
 ## Next Steps
-Please modify the demo and test program and show what you can do.
+Please read MANUAL.txt for detailed information on the assembler. Please modify the demo and test programs and
+show what you can do.
 
 ## Development of the Assembler in ROM Project
-All testing and debugging of the Assembler in ROM project is done on hardware (OtterX #133). All sample and test programs were developed on hardware using EDIT.
+All testing and debugging of the Assembler in ROM project is done on hardware (OtterX #133). All sample and test
+programs were developed on hardware using EDIT.
+
+## Future development
+
+Focus for the *next* release will be:
+  * Conditional assembly features
+  * Memory optimization for the symbol/indentifier table
+  * MANUAL.txt formatted for use in EDIT
 
 ## Feedback
 Please share any issues you find and let me know what you think:
