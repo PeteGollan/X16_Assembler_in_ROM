@@ -1,4 +1,4 @@
-# **TEST RELEASE "i1" of Commander X16 Assembler in ROM v0.04**
+# **TEST RELEASE "i2" of Commander X16 Assembler in ROM v0.04**
 September 9, 2026
 
 This repository contains demo KERNAL ROMs that have the X16-Assembler in ROM integrated.
@@ -7,8 +7,8 @@ This repository contains demo KERNAL ROMs that have the X16-Assembler in ROM int
 
 |        File        |                                     Description                                         |
 |--------------------|-----------------------------------------------------------------------------------------|
-|**r49_ti1.bin**     | R49 KERNAL ROM with Assembler, test version "i1"                                        |
-|**r49cwd_ti1.bin**  | R49 KERNAL ROM with Assembler plus Calypso support with driver (cwd), test version "i1" |
+|**r49_ti2.bin**     | R49 KERNAL ROM with Assembler, test version "i2"                                        |
+|**r49cwd_ti2.bin**  | R49 KERNAL ROM with Assembler plus Calypso support with driver (cwd), test version "i2" |
 |**ad1.asm**         | Assembler demo #1                                                                       |
 |**asmbasic.bl**     | BASLOAD program demonstrates interacting with ASM from a BASIC program                  |
 |**asmdelta.bl**     | BASLOAD program demonstrates retrieving assembly time                                   |
@@ -24,6 +24,9 @@ This repository contains demo KERNAL ROMs that have the X16-Assembler in ROM int
 Note:
 * ROM files have their original filenames embedded. Search "X16-Assembler" with a hex editor to check filename.
 
+## Changes from the "ti1" ROMs:
+* Help text shows the name of the ASM test ROM
+* Byte at offset $43FCF changed from $FF to $00 to match prior padding bytes.
 
 ## Changes from the "ti" ROMs:
 * Assembler version 0.04 (no change)
