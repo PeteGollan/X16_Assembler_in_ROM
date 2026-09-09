@@ -1,24 +1,35 @@
-# **TEST RELEASE of Commander X16 Assembler in ROM v0.04**
-September 4th, 2026
+# **TEST RELEASE "i1" of Commander X16 Assembler in ROM v0.04**
+September 9, 2026
 
 This repository contains demo KERNAL ROMs that have the X16-Assembler in ROM integrated.
 
 ## Contents
 
-|        File        |                                     Description                                       |
-|--------------------|---------------------------------------------------------------------------------------|
-|**r49_ti.bin**      | Stock KERNAL ROM with Assembler, test version "i"                                     |
-|**ad1.asm**         | Assembler demo #1                                                                     |
-|**asmbasic.bl**     | BASLOAD program demonstrates interacting with ASM from a BASIC program                |
-|**asmdelta.bl**     | BASLOAD program demonstrates retrieving assembly time                                 |
-|**asmdelta.prg**    | Compiled version of the program can be used to view assembly time                     |
-|**hello1.asm.bl**   | Sample assembly program to introduce the assembler and CX16 assembly programming      |
-|**basic_header.bin**| BASIC stub for use with .binary (see the .binary section in MANUAL.txt)               |
-|**prev_ROMs**       | Directory contains previously released ROMs                                           |
-|**testing**         | Directory contains programs that were used to test various assembler functions        |
-|**MANUAL.txt**      | The Assembler-in-ROM manual                                                           |
+|        File        |                                     Description                                         |
+|--------------------|-----------------------------------------------------------------------------------------|
+|**r49_ti1.bin**     | R49 KERNAL ROM with Assembler, test version "i1"                                        |
+|**r49cwd_ti1.bin**  | R49 KERNAL ROM with Assembler plus Calypso support with driver (cwd), test version "i1" |
+|**ad1.asm**         | Assembler demo #1                                                                       |
+|**asmbasic.bl**     | BASLOAD program demonstrates interacting with ASM from a BASIC program                  |
+|**asmdelta.bl**     | BASLOAD program demonstrates retrieving assembly time                                   |
+|**asmdelta.prg**    | Compiled version of the program can be used to view assembly time                       |
+|**hello1.asm.bl**   | Sample assembly program to introduce the assembler and CX16 assembly programming        |
+|**basic_header.bin**| BASIC stub for use with .binary (see the .binary section in MANUAL.txt)                 |
+|**prev_ROMs**       | Directory contains previously released ROMs                                             |
+|**testing**         | Directory contains programs that were used to test various assembler functions          |
+|**MANUAL.txt**      | The Assembler-in-ROM manual                                                             |
 
   (More assembler demos will be released)
+
+Note:
+* ROM files have their original filenames embedded. Search "X16-Assembler" with a hex editor to check filename.
+
+
+## Changes from the "ti" ROMs:
+* Assembler version 0.04 (no change)
+* Test ROM version "i1"
+* Mitigates a bug in the CALYPSO driver
+* Standard test ROM re-released as it also includes the CALPYSO mitigation
 
 ## Changes from the "th" ROMs:
 * Assembler version 0.04
