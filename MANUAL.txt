@@ -42,7 +42,7 @@ Unary operators:
 |   -     | minus sign  | One's complement                 |
 |  ( )    | parentheses | Grouping and order of operations |
 |   *     | asterisk    | Program counter                  |
-| > and < | aligators   | Return lower and upper 8 bits    |
+| > and < | alligators  | Return lower and upper 8 bits    |
 +----------------------------------------------------------+
 
 Terms:
