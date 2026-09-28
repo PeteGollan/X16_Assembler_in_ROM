@@ -1,7 +1,7 @@
 +--------------------------------------+
-| Commander X16 Assembler in ROM v0.04 |
+| Commander X16 Assembler in ROM v0.05 |
 +--------------------------------------+
-        Released September 4, 2026        
+       Released September 28, 2026        
 
 This is the manual for the 65C02 assembler integrated into the Commander X16 ROM.
 
@@ -30,17 +30,23 @@ Labels and identifiers are limited to 20 characters. Line lengths are limited to
 | Expressions |
 +-------------+
 
-Expressions support the following using 16 bits :
+All expressions are calculated as 16 bit valuse.
 
 Binary operators with standard precedence:
   + - * / % & (and) | (or) ^ (exclusive or) >> << (shift right/left)
 
 Unary operators:
- - (parenthesis) * (program counter) > and < (lower and upper 8 bits),
- !label (returns bank number associated with the label or undefined)
++----------------------------------------------------------+
+| Symbol  | Description |            Action                |
++----------------------------------------------------------+
+|   -     | minus sign  | One's complement                 |
+|  ( )    | parentheses | Grouping and order of operations |
+|   *     | asterisk    | Program counter                  |
+| > and < | aligators   | Return lower and upper 8 bits    |
++----------------------------------------------------------+
 
 Terms:
-label, decimal, $[hexadecimal] %[binary] '[character code]'
+  label, decimal, $[hexadecimal] %[binary] '[character code]'
 
 
 +--------+
@@ -56,8 +62,8 @@ labels. Macro names are considered global labels.
 A solitary global label is assigned the value of program counter.
 
 Labels/identifiers can be anywhere on a line if ONE of the following is met:
-    * Ends with a colon (:)
-    * Is an assignment (<label> = <value>)
+    * It ends with a colon (:)
+    * It is an assignment (<label> = <value>)
 	* Is followed by a pseudo-op (mymac .macro or myvar .fill 2)
   	* A label/indentifier that does not meet ONE of these criteria must start in the first column
 
@@ -73,13 +79,14 @@ program. There are some differences.
 EDIT's Programming Toolbox
 --------------------------
 
-With the source code open in EDIT, press ctrl-F to open the Programming Toolbox and then press "A" to start
-assembly.
+With the source code open in EDIT, press ctrl-F to open the Programming
+Toolbox and then press "A" to start assembly.
 
-When assembling from EDIT, restrictions on direct assembly locations protect EDIT and the system:
+When assembling from EDIT, restrictions on direct assembly locations protect
+EDIT and the system. The following memory areas are available:
 
 	System memory: $0801 to $9EFF
-	RAM banks	 : $03-$09
+	RAM banks    : $03-$09
 	ROM banks    : $20-$FF
 
 ------------------
@@ -89,10 +96,11 @@ BASIC Command Line
 Type:
   asm"<filename>"
 
-When assembling from BASIC, restrictions on direct assembly locations protect the system:
+When assembling from BASIC, restrictions on direct assembly locations protect
+the system. The following memory areas are available:
 
 	System memory: $0400 to $9EFF
-	RAM banks	 : $03-$FF
+	RAM banks    : $03-$FF
 	ROM banks    : $20-$FF
 
 -------------
@@ -131,6 +139,11 @@ Pseudo-operations are:
 | .fill count[,value]   | Allocates an area of memory and optionally fills with specified value (also .ds) |
 | .align value          | Puts on align byte boundary                                                      |
 | .macro name           | Define macro (also name .macro) (see below)                                      |
+| .if/.else/.endif      | Conditional assembly (see below)                                                 |
+| .ifdef/.ifndef        | Conditional assembly (see below)                                                 |
+| .assert <expression>  | Causes an "asert failed" error if <expression> is false.                         |
+| .logical <addr>	    | Starts a "logical" code block at <addr> (see below)                              |
+| .endlogical           | Ends a "logical" code block (see below)                                          |
 +-----------------------+----------------------------------------------------------------------------------+
 
 -------
@@ -267,6 +280,80 @@ Macro example:
 	.endm
 
 
+--------------------
+Conditional Assembly
+--------------------
+
+The test program "condtest.asm" has examples of conditonal assembly.
+
+Conditional assembly example:
+
+DEBUG=1
+moo = $BEEF
+
+.if DEBUG	; This is TRUE because DEBUG is non-zero
+  jsr InitDebugger	    ; Will be assembled in this example
+  ...
+.else
+  jsr WarnNoDebugger	; Will NOT be assembled in this example
+.endif
+
+A conditional block is started with:
+.if <expression>
+
+If the expression evaluates to a non-zero 16-bit value, it will be TRUE and assembly
+will continue at the line after the ".if" until EITHER an .endif is reached OR an .else
+is reached. If the expression evaluates to zero, it will be FALSE and assembly will
+stop until EITHER an .endif is reached OR an .else is reached.
+
+Within a conditional block, the optional pseudo op .else inverts the assembly state. If assembly
+is occuring (because the expression was true), .else will cause assembly to stop until
+end conditional block ends with .endif. If assembly is stopped, .else will cause assembly
+to start. 
+
+Two variants of .if are provided:
+  .ifdef <identifier>
+  .ifndef <identifier>
+
+These conditionals test if the identifier has been defined or not defined respectively. They
+replace .if to start a conditional block and are used with .else and .endif in the same way.
+Note that .ifndef <identifier> will be TRUE if the identifier is NOT defined as in this example:
+
+.ifndef MATHLIB			; TRUE because MATHLIB is not defined
+.include "mathlib.asm"	; This line will be assembled
+.endif
+
+-------
+Logical
+-------
+The test program "logtest.asm" has a full example of the use of logical assembly to relocate
+and run code.
+
+A logical block is used to assemble code within a program that is intended to run at a different address.
+Any labels created within a logical block will have an adddress within the logical block address space.
+
+Logical assembly example:
+
+* = $1000
+main:
+  <init code>
+  <code to relocate mathlib to a RAM bank, starting at $A000
+  jsr mathlib_main	; Start the relocated code
+  rts
+
+mathlib_start:
+.logical $A000
+mathlib_main:
+<code for the math lib>
+.endlogical
+mathlib_end:
+
+In the example, the "math lib" runs at $A000, but the host program is loaded and run at $1000. Within the
+host program, the labels mathlib_start and mathlib_end can be used to copy the logical block code to it's target
+address. Then the label mathlib_main can be used to call the code at its runtime location.
+
+Within a logical block, the origin cannot be changed. Use another logical block instead.
+
 +--------------------------------+
 | Source Code Character Encoding |
 +--------------------------------+
@@ -301,10 +388,8 @@ asterix (*) in the middle.
 
 Some contemplated future development:
 
-* Conditional assembly features
-* Memory optimization for the symbol/indentifier table
-* Support for relocatable code (e.g. ".virtual")
-* Symbol/identifier table listing option
+* 65C816 processor support
+* Identifier/symbol table listing option
 * .rambank and .rombank increment rollover to the next available bank
 * A built-in IDE (Integrated Development Environment)
 
@@ -387,6 +472,13 @@ The assembler makes the text of the response string available to a BASIC program
 | $18 | .macro requires an identifier				            |
 | $19 | .macro identifier already exists			            |
 | $1A | Too many nested files					                |
+| $1B | Source file read error	                                |
+| $1C | Nested conditional                                      |
+| $1D | Nested logical                                          | 
+| $1E | .else/.endif without .if                                |
+| $1F | .endlogical without .logical                            |
+| $20 | .assert failed                                          |
+| $21 | Can't change origin in .logical block                   |
 |.....|.......							                        |
 | $E1 | Source file not specified (e.g. ASM"")			        |
 +-----+---------------------------------------------------------+

@@ -1,5 +1,5 @@
-# **TEST RELEASE "i2" of Commander X16 Assembler in ROM v0.04**
-September 9, 2026
+# **TEST RELEASE "j" of Commander X16 Assembler in ROM v0.05**
+September 28, 2026
 
 This repository contains demo KERNAL ROMs that have the X16-Assembler in ROM integrated.
 
@@ -7,26 +7,39 @@ This repository contains demo KERNAL ROMs that have the X16-Assembler in ROM int
 
 |        File        |                                     Description                                         |
 |--------------------|-----------------------------------------------------------------------------------------|
-|**r49_ti2.bin**     | R49 KERNAL ROM with Assembler, test version "i2"                                        |
-|**r49cwd_ti2.bin**  | R49 KERNAL ROM with Assembler plus Calypso support with driver (cwd), test version "i2" |
+|**r49_tj.bin**      | R49 KERNAL ROM with Assembler test version "j"                                          |
+|**r49cwd_tj.bin**   | R49 KERNAL ROM with Assembler plus Calypso support with driver (cwd), test version "j"  |
 |**ad1.asm**         | Assembler demo #1                                                                       |
 |**asmbasic.bl**     | BASLOAD program demonstrates interacting with ASM from a BASIC program                  |
 |**asmdelta.bl**     | BASLOAD program demonstrates retrieving assembly time                                   |
 |**asmdelta.prg**    | Compiled version of the program can be used to view assembly time                       |
-|**hello1.asm.bl**   | Sample assembly program to introduce the assembler and CX16 assembly programming        |
 |**basic_header.bin**| BASIC stub for use with .binary (see the .binary section in MANUAL.txt)                 |
-|**prev_ROMs**       | Directory contains previously released ROMs                                             |
-|**testing**         | Directory contains programs that were used to test various assembler functions          |
+|**_prev_ROMs**      | Directory contains previously released ROMs                                             |
+|**testing**         | Directory contains programs that test and demonstrate various assembler functions       |
+|**learning**        | Directory contains programs to introduce the assembler and CX16 assembly programming    |
 |**MANUAL.txt**      | The Assembler-in-ROM manual                                                             |
 
   (More assembler demos will be released)
 
 Note:
 * ROM files have their original filenames embedded. Search "X16-Assembler" with a hex editor to check filename.
+* The BASIC "HELP" command lists the ASM TEST ROM that is installed (best viewed in ISO mode).
+
+## Changes from the "ti2" ROMs:
+* Assembler version 0.05
+* Test ROM version "j"
+* Added conditional assembly and assertion:
+  * .if/.else/.endif
+  * .ifdef/ifndef
+  * .assert
+* Added support for assembling code that is run at a different address:
+  * .logical/.endlogical
+* Memory optimization for the symbol/indentifier table
+* The "!" bank number operator has been removed
 
 ## Changes from the "ti1" ROMs:
 * Help text shows the name of the ASM test ROM
-* Byte at offset $43FCF changed from $FF to $00 to match prior padding bytes.
+* Byte at offset $43FCF changed from $FF to $00 to match prior padding bytes
 
 ## Changes from the "ti" ROMs:
 * Assembler version 0.04 (no change)
@@ -115,7 +128,8 @@ From EDIT:
 
 ## How to Use ASMDELTA.BL:
 
-ASMDELTA is used to display the assembly time in seconds after the assembler is run from the BASIC command line.
+ASMDELTA is used to display the assembly time in seconds immediately after the assembler is run from
+the BASIC command line. This feature does not work for assembly from EDIT.
 
 From the BASIC command line:
 ```
@@ -127,11 +141,8 @@ Alternatively:
 ^ASMDELTA.PRG
 ```
 
-
 ## Calypso Support
-Calypso support has been omitted for the "ti" release. I am evaluating an incompatibility between the Calypso
-driver and the performance improvements that have been added to the assembler. I will continue Calypso support
-if a reasonable solution can be found.
+Calypso continues to be supported with the "cwd" (Calypso with driver) variant of the test ROMs.
 
 ## Next Steps
 Please read MANUAL.txt for detailed information on the assembler. Please modify the demo and test programs and
@@ -144,8 +155,7 @@ programs were developed on hardware using EDIT.
 ## Future development
 
 Focus for the *next* release will be:
-  * Conditional assembly features
-  * Memory optimization for the symbol/indentifier table
+  * 65C816 processor support
   * MANUAL.txt formatted for use in EDIT
 
 ## Feedback
