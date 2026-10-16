@@ -41,12 +41,20 @@
 
 ; Conditional assembly tests:
 
- 
+
+; lower case: 
     .if foo=$13     ; TRUE
     lda #$01
     .else
     lda #$A1        ; This should skip
     .endif          ; It is OK to have a comment
+
+; UPPER CASE:
+    .IF foo=$13     ; TRUE
+    lda #$01
+    .ELSE
+    lda #$A1        ; This should skip
+    .ENDIF          ; It is OK to have a comment
 
    
     .if foo > $50   ; FALSE

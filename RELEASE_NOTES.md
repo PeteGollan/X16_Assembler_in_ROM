@@ -1,7 +1,8 @@
-# **TEST RELEASE "j" of Commander X16 Assembler in ROM v0.05**
-September 28, 2026
+# **TEST RELEASE "k" of Commander X16 Assembler in ROM v0.06**
+October 14, 2026
 
-This repository contains demo KERNAL ROMs that have the X16-Assembler in ROM integrated.
+This repository contains demo KERNAL ROMs that have the X16-Assembler in ROM integrated. The assembler manual
+is the file "MANUAL.txt".
 
 ## Contents
 
@@ -24,6 +25,20 @@ This repository contains demo KERNAL ROMs that have the X16-Assembler in ROM int
 Note:
 * ROM files have their original filenames embedded. Search "X16-Assembler" with a hex editor to check filename.
 * The BASIC "HELP" command lists the ASM TEST ROM that is installed (best viewed in ISO mode).
+
+## Changes from the "tj" ROMs:
+* Assembler version 0.06
+* Test ROM version "k"
+* Added support for the 65C816 processor:
+  * .p65c02/.p65c816
+  * .a8/.a16/.i8/.i16
+* Added 65C816 instructions and addressing modes (see " Processor Support" in MANUAL.TXT)
+* Added alternate mnemonics for both 65C02 and 65C816:
+
+  | **STD** | **ALT** |
+  |---------|---------|
+  |   bcc   |   blt   |
+  |   bcs   |   bge   |
 
 ## Changes from the "ti2" ROMs:
 * Assembler version 0.05
@@ -155,9 +170,8 @@ programs were developed on hardware using EDIT.
 ## Future development
 
 Focus for the *next* release will be:
-  * 65C816 processor support
-  * MANUAL.txt formatted for use in EDIT
-
+  * Activites to support official ROM inclusion
+  
 ## Feedback
 Please share any issues you find and let me know what you think:
 

@@ -1,9 +1,9 @@
 +--------------------------------------+
-| Commander X16 Assembler in ROM v0.05 |
+| Commander X16 Assembler in ROM v0.06 |
 +--------------------------------------+
-       Released September 28, 2026        
+       Released October 14., 2026        
 
-This is the manual for the 65C02 assembler integrated into the Commander X16 ROM.
+This is the manual for the 65C02/65C816 assembler integrated into the Commander X16 ROM.
 
 The Commander X16 Assembler was written by Paul Robson (paul@robsons.org.uk) and published as MIT open source on Codeburg:
 https://codeberg.org/paulscottrobson/x16-assembler
@@ -39,10 +39,10 @@ Unary operators:
 +----------------------------------------------------------+
 | Symbol  | Description |            Action                |
 +----------------------------------------------------------+
-|   -     | minus sign  | One's complement                 |
+|   -     | minus sign  | Two's complement                 |
 |  ( )    | parentheses | Grouping and order of operations |
 |   *     | asterisk    | Program counter                  |
-| > and < | aligators   | Return lower and upper 8 bits    |
+| > and < | alligators  | Return lower and upper 8 bits    |
 +----------------------------------------------------------+
 
 Terms:
@@ -119,11 +119,11 @@ The assembler is entirely controlled through pseudo operations.
 Pseudo Operations
 -----------------
 
-Pseudo-operations are:
+pseudo-operations are listed by category in the following tables:
 
-+-----------------------+----------------------------------------------------------------------------------+
-| Operation             | Function                                                                         |
-|-----------------------|----------------------------------------------------------------------------------|
++----------------------------------------------------------------------------------------------------------+
+| ASSEMBLER CONTROL                                                                                        |
+|-----------------------+----------------------------------------------------------------------------------|
 | .direct               | Enables direct assembly to system RAM, banked RAM, and ROM                       |
 | .rambank [index]      | Select RAM bank used in direct assembly in the range $A000 to $BFFF (also .bank) |
 | .rombank [index]	    | Select ROM bank used in direct assembly in the range $C000 to $FFFF              |
@@ -132,32 +132,59 @@ Pseudo-operations are:
 | .include "file"       | Include a source file                                                            |
 | .binary "file"        | Include binary file (also .incbin)                                               |
 | .list "file"          | Enables listing output to the specified file                                     |
++-----------------------+----------------------------------------------------------------------------------+
+
++----------------------------------------------------------------------------------------------------------+
+| DATA                                                                                                     |
+|-----------------------+----------------------------------------------------------------------------------|
 | .byte [values]        | Adds a sequence of bytes (also .db)                                              |
 | .word [values]        | Adds a sequence of words in low/high order (also .dw)                            |
 | .text [string|byte]   | Sequence of quoted strings (ASCII) or bytes, can be mixed                        |
 | .petscii [string|byte]| Same as .text, except it interprets quoted strings as mixed case PETSCII         |
 | .fill count[,value]   | Allocates an area of memory and optionally fills with specified value (also .ds) |
 | .align value          | Puts on align byte boundary                                                      |
-| .macro name           | Define macro (also name .macro) (see below)                                      |
-| .if/.else/.endif      | Conditional assembly (see below)                                                 |
-| .ifdef/.ifndef        | Conditional assembly (see below)                                                 |
-| .assert <expression>  | Causes an "asert failed" error if <expression> is false.                         |
-| .logical <addr>	    | Starts a "logical" code block at <addr> (see below)                              |
-| .endlogical           | Ends a "logical" code block (see below)                                          |
 +-----------------------+----------------------------------------------------------------------------------+
 
--------
-.direct
--------
++----------------------------------------------------------------------------------------------------------+
+| MACROS/CONDITIONALS/LOGICAL                                                                              |
+|-----------------------+----------------------------------------------------------------------------------|
+| .macro <name>         | Define macro (also name .macro) (see below)                                      |
+| .endmacro             | Ends the definition of a macro.
+|-----------------------|----------------------------------------------------------------------------------|
+| .if/.else/.endif      | Define a conditional assembly block (see below)                                                 |
+| .ifdef/.ifndef        | Define a conditional assembly block (see below)                                                 |
+| .assert <expression>  | Causes an "asert failed" error if <expression> is false.                         |
+|-----------------------|----------------------------------------------------------------------------------|
+| .logical <addr>	    | Starts a "logical" code block at <addr> (see below)                              |
+| .endlogical           | Ends a "logical" code block (see below)                                          |
++----------------------------------------------------------------------------------------------------------+
+
++----------------------------------------------------------------------------------------------------------+
+| PROCESSOR SUPPORT                                                                                        |
+|-----------------------+----------------------------------------------------------------------------------|
+| .p65C02		        | Selects the WDC W65C02S processor instruction set. THIS IS THE DEFAULT.          |
+|-----------------------|----------------------------------------------------------------------------------|
+| .p65C816		        | Selects the WDC W65C816S processor instruction set.                              |
+|-----------------------|----------------------------------------------------------------------------------|
+| .a8/.a16   	        | 65C816 ONLY. Selects the size of accumulator immediate mode operands. DEFAULT    |
+|                       | is .a8. The setting persists even if the processor is changed to 65C02 and back. |
+|-----------------------|----------------------------------------------------------------------------------|
+| .i8/.i16   	        | 65C816 ONLY. Selects the size of index register immediate mode operands. DEFAULT |
+|         		        | is .a8. The setting persists even if the processor is changed to 65C02 and back. |                                                                                  |
++-----------------------+----------------------------------------------------------------------------------+
+
+---------
+ .direct
+---------
 The .direct option tells the assembler to send object code directly to memory as it is being assembled. It can
 be used on its own to quickly build and test projects.
 
 Direct can also be used with .object, but use caution when changing the program counter (using `*=`), as
 subsequent code sent to the file will have the new origin. This **can** be used to create relocatable code.
 
----------------------
-.rambank and .rombank
----------------------
+-----------------------
+ .rambank and .rombank
+-----------------------
 
 Direct mode (.direct) must be enabled to use these operations. When [index] is omitted, the next RAM or
 ROM bank is selected. Pseudo-ops .rambank and .rombank do **not** change the program counter. This must be done
@@ -174,9 +201,9 @@ explictly:
 	asl
 	sta moo
 
--------------------
-.object and .noaddr
--------------------
+---------------------
+ .object and .noaddr
+---------------------
 
 By default, .object (or .obj) creates a file that has an address header and is used with LOAD:
 
@@ -191,9 +218,9 @@ With the .noaddr option, the assembler omits the load address and requires BLOAD
 	...
 	BLOAD "moo.bin",8,1,$A000
 
------
-.fill
------
+-------
+ .fill
+-------
 
 Fill .fill accepts a count in the range 0-255 and an optional value parameter, also in the range 0-255.
 
@@ -219,9 +246,9 @@ counter. The default fill value is zero, but an optional fill value may be speci
 	var6:	.fill 1			; Produces: $00
 	var7:	.fill 4,$99		; Produces: $99 $99 $99 $99 
 	
---------------------
-.include and .binary
---------------------
+----------------------
+ .include and .binary
+----------------------
 
 The .include (or .inc) option includes another source file:
 
@@ -249,9 +276,9 @@ Note about using  .binary (or .incbin) with object files:
   .binary, either take the two-byte header into account in the code or use the .noaddr option when assembling
   these modules.
 
-------
-Macros
-------
+--------
+ Macros
+--------
 
 The the identifier can appear either *before* or *after* the .macro pseudo-op:
 
@@ -280,16 +307,16 @@ Macro example:
 	.endm
 
 
---------------------
-Conditional Assembly
---------------------
+------------------------
+  Conditional Assembly
+------------------------
 
 The test program "condtest.asm" has examples of conditonal assembly.
 
 Conditional assembly example:
 
 DEBUG=1
-moo = $BEEF
+moo = $beef
 
 .if DEBUG	; This is TRUE because DEBUG is non-zero
   jsr InitDebugger	    ; Will be assembled in this example
@@ -323,9 +350,9 @@ Note that .ifndef <identifier> will be TRUE if the identifier is NOT defined as 
 .include "mathlib.asm"	; This line will be assembled
 .endif
 
--------
-Logical
--------
+---------
+ Logical
+---------
 The test program "logtest.asm" has a full example of the use of logical assembly to relocate
 and run code.
 
@@ -349,10 +376,88 @@ mathlib_main:
 mathlib_end:
 
 In the example, the "math lib" runs at $A000, but the host program is loaded and run at $1000. Within the
-host program, the labels mathlib_start and mathlib_end can be used to copy the logical block code to it's target
-address. Then the label mathlib_main can be used to call the code at its runtime location.
+host program, the labels mathlib_start and mathlib_end can be used to copy the logical block code to it's
+target address. Then the label mathlib_main can be used to call the code at its runtime location.
 
 Within a logical block, the origin cannot be changed. Use another logical block instead.
+
+-------------------
+ Processor Support
+-------------------
+
+The assembler supports W65C02S and W65C816S processors. The default is W65C02S. To switch to W65C816S
+assembly use the .p65c816 psuedo op. To switch back to W65C02S assembly use .p65c02. When 65c816 mode
+is set, the pseudo ops .a8/.a16 and .i8/.i16 determine the size of immediate operands for the a-regsiter
+and index (x and y) registers. Note that the processor support pseudo ops only inform the assembler
+about the programmer's intention. It is up to the programmer to include the appropriate assembly
+instructions to change the modes.
+
+Assembly mode and register size changing example:
+
+	.p65c816
+    clc
+	xce			; Switch to 65C816 mode
+	.a16
+	.i16
+	rep #$30	; Set acc and index to 8-bit mode
+	lda #$beef	; Immediate acc data is 16-bits
+	.a8
+	.i8
+    sep #$30	; set acc and index regs to 8-bit mode
+    lda #$12    ; Immediat index data is 8-bits
+	
+	sec			; Switch to 65C02 mode
+	xce			; Must be assembled in 65C816 mode
+	.p65c02
+	...
+
+---------------------
+ Alternate Mnemonics
+---------------------
+
+The following alternate mnemonics are provided for both procssor modes:
++-----+-----+ 
+| STD | ALT |
++-----+-----+ 
+| bcc | blt |
++-----+-----+ 
+| bcs | bge |
++-----+-----+ 
+
+---------------
+ W65C02S Notes
+---------------
+
+The following instructions are omitted from 65C02 support:
+	BBR/BBS/RMB/SMB
+
+BRK can be optionally assembled with a signature byte:
+
+    brk
+    brk #$12        ; imm - optional signature byte
+    brk $12         ; dp - optional signature byte (alternate)
+
+---------------
+ W65C816 Notes
+---------------
+
+BRK and COP can be optionally assembled with a signature byte:
+
+    brk
+    brk #$12        ; imm - optional signature byte
+    brk $12         ; dp - optional signature byte (alternate)
+
+    cop
+    cop #$12        ; imm - optional signature byte
+    cop $12         ; dp - optional signature byte (alternate)
+
+WDM requires a signature byte:
+
+    wdm #$12            ; imm - mandatory signature byte
+    wdm $12             ; dp - mandatory signature byte (alternate)
+
+To see how the new 65C816 addressing modes are used, look at the program
+"test816.asm" in the "testing" directory.
 
 +--------------------------------+
 | Source Code Character Encoding |
@@ -388,7 +493,6 @@ asterix (*) in the middle.
 
 Some contemplated future development:
 
-* 65C816 processor support
 * Identifier/symbol table listing option
 * .rambank and .rombank increment rollover to the next available bank
 * A built-in IDE (Integrated Development Environment)
