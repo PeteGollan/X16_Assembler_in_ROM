@@ -1,7 +1,7 @@
 +--------------------------------------+
 | Commander X16 Assembler in ROM v0.06 |
 +--------------------------------------+
-       Released October 14., 2026        
+       Released October 16, 2026        
 
 This is the manual for the 65C02/65C816 assembler integrated into the Commander X16 ROM.
 
@@ -180,7 +180,8 @@ The .direct option tells the assembler to send object code directly to memory as
 be used on its own to quickly build and test projects.
 
 Direct can also be used with .object, but use caution when changing the program counter (using `*=`), as
-subsequent code sent to the file will have the new origin. This **can** be used to create relocatable code.
+subsequent code sent to the file will have the new origin. This **can** be used to create relocatable code,
+however the ".logical/.endlogical" pseudo ops are intended for this purpose.
 
 -----------------------
  .rambank and .rombank
@@ -459,6 +460,7 @@ WDM requires a signature byte:
 To see how the new 65C816 addressing modes are used, look at the program
 "test816.asm" in the "testing" directory.
 
+
 +--------------------------------+
 | Source Code Character Encoding |
 +--------------------------------+
@@ -487,17 +489,23 @@ longer than 32 characters, the assembler splits the displayed file name into two
 asterix (*) in the middle.
 
 
++---------------+
+| Assembly Tips |
++---------------+
+
+Assembly code does NOT require .direct, .obj, or *= to be assembled. Code will not be produced without at
+least one of .direct or .obj, but it can be useful to "assemble" code to check it and find errors. For example,
+a syntax error in an include file can be quickly located by opening the file in EDIT and assembling it.
+
+
+
 +--------------------+
 | Future Development |
 +--------------------+
 
-Some contemplated future development:
+Focus for future releases be activites to support official ROM inclusion.
 
-* Identifier/symbol table listing option
-* .rambank and .rombank increment rollover to the next available bank
-* A built-in IDE (Integrated Development Environment)
-
-Please share you ideas and suggestions. Which of these would you like to see first?
+Please share you ideas and suggestions.
 
 +---------------------------------------------+
 | Appendix A - Using ASM from a BASIC Program |
@@ -557,7 +565,7 @@ The assembler makes the text of the response string available to a BASIC program
 | $05 | Source file not found					                |
 | $06 | Undefined identifier					                |
 | $07 | Relative branch range					                |
-| $08 | Address mode not supported in 65C02			            |
+| $08 | Address mode not supported                              |
 | $09 | Bad expression						                    |
 | $0A | Line too long						                    |
 | $0B | Too many macro parameters				                |
@@ -583,6 +591,10 @@ The assembler makes the text of the response string available to a BASIC program
 | $1F | .endlogical without .logical                            |
 | $20 | .assert failed                                          |
 | $21 | Can't change origin in .logical block                   |
+| $22 | Requires 65c816 mode                                    |
+| $23 | Requires 65c02 mode                                     | 
+| $24 | Operand requires 16-bit register mode                   |
+| $25 | 8-bit operand required                                  |
 |.....|.......							                        |
 | $E1 | Source file not specified (e.g. ASM"")			        |
 +-----+---------------------------------------------------------+

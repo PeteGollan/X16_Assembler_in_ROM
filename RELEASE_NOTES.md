@@ -1,5 +1,5 @@
 # **TEST RELEASE "k" of Commander X16 Assembler in ROM v0.06**
-October 14, 2026
+October 16, 2026
 
 This repository contains demo KERNAL ROMs that have the X16-Assembler in ROM integrated. The assembler manual
 is the file "MANUAL.txt".
@@ -32,13 +32,15 @@ Note:
 * Added support for the 65C816 processor:
   * .p65c02/.p65c816
   * .a8/.a16/.i8/.i16
-* Added 65C816 instructions and addressing modes (see " Processor Support" in MANUAL.TXT)
+* Added 65C816 instructions and addressing modes (see "Processor Support" in MANUAL.TXT)
 * Added alternate mnemonics for both 65C02 and 65C816:
 
   | **STD** | **ALT** |
   |---------|---------|
   |   bcc   |   blt   |
   |   bcs   |   bge   |
+
+* Added "testing/test816.asm" program for 65C02/65C816
 
 ## Changes from the "ti2" ROMs:
 * Assembler version 0.05
@@ -103,6 +105,16 @@ Note:
 * Added file save checks to the Programming Toolbox for both BASLOAD and ASSEMBLER.
 
 
+## A Note About Long Assmembly Files - Release tk
+* An issue has been identified where assembly files longer than 1000 lines produce spurious errors. This does NOT occur on systems equipped with Calypso. Investigation is underway, but it appears to be a KERNAL issue. A workaround is to split longer files. You can see the long file issue yourself:
+
+  * Download the file testing/longfile.txt and put it on your CX16.
+  * Open longfile.txt in EDIT
+  * Scroll through the file; if you see any mis-aligned text or line numbers out of place, this is the long files issue.
+
+## A Note About 65C816 Code and the CX16 ROM Monitor
+* The CX16 built in monitor "MON" does not handle program termination on a 65C816 processor that is in 65C816 mode. A program that ends with RTS or BRK in 65C816 mode will crash the monitor. A work around is to put the 65C816 processor into 65C02 emulation mode before exiting.
+
 ## How to Use the KERNAL ROMs
 
 Rename either stock or Calypso ROM to ROM.bin and use CX16-Update to flash your CX16/OtterX.
@@ -166,6 +178,7 @@ show what you can do.
 ## Development of the Assembler in ROM Project
 All testing and debugging of the Assembler in ROM project is done on hardware (OtterX #133). All sample and test
 programs were developed on hardware using EDIT.
+
 
 ## Future development
 
