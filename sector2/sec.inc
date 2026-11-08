@@ -57,6 +57,8 @@ PLOT    = $FFF0 ; Set/Get cursor XY coordinates
 EXTAPI  = $FEAB
 MACPTR  = $FF44 ; In: a=bytes to read (0 for up to 512), xy=ptr to buffer, C=0 inc dest, C=1 don't inc dest Out: C=0 supported, xy=bytes read C=1 not supported
 
+sdcard_read_sector=$E5E4 ; bank 3 In: sector_LBA=lba (4 bytes) Out: C=1 success, C=0 error (NOTE it is reversed)
+
 ; EXTAPI sub-functions:
 blink_enable = $14      ; x=0 blink, x!=0 no-blink
 
@@ -66,3 +68,6 @@ READST_EOF = $40    ; EOF bit
 RAM_BANK_REG = $00
 ROM_BANK_REG = $01
 
+; UNPUBLISHED KERNAL ADDRESSES (valid for R49):
+SDCARD_CHECK_ALIVE_ADDR = $E72E     ; Bank 3
+CLEAR_BUFFER_ADDR       = $C5C1     ; Bank 3

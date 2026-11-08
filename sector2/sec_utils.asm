@@ -14,6 +14,7 @@
 ;   GetYN - Waits until Y, N, RETURN, or ESC is pressed
 ;   GetCharInput - reads a single character of keyboard input
 ;   GetLineInput - Reads a line of keyboard input
+;   TextToHex - Convert PETSCII hex digit in A-reg to a hex digit
 ;   StrOut
 ;   StrLen
 ;   Hex16Dec - Converts a 16-bit word to ASCII decimal digits
@@ -21,6 +22,7 @@
 ;   ConvDec16 - Converts a 1-5 digit decimal number to 16-bit hexidecimal (0-65535)
 ;   FileExists - Checks if a file exists
 ;   WordOut - prints a given word in hexadecimal
+;   Word32Out - prints the given 4-byte value in hexadecimal
 ;   Hex3Out - prints the hex value of 3 digit value
 ;   ByteOut - prints the hex value of a given byte
 
@@ -50,6 +52,7 @@ PETSCII_B = $42           ; PETSCII "B"
 PETSCII_C = $43           ; PETSCII "C"
 PETSCII_M = $4D           ; PETSCII "M"
 PETSCII_N = $4E           ; PETSCII "N"
+PETSCII_S = $5E           ; PETSCII "S"
 PETSCII_Y = $59           ; PETSCII "Y"
 PETSCII_Z = $7A           ; PETSCII "Z"
 
@@ -336,6 +339,26 @@ GetLineInput:
         sec                 ; Input abandoned...
         rts
 
+;----------------------------------------------------------------
+; TextToHex - Convert PETSCII hex digit in A-reg to a hex digit
+;
+; On Entry: A = PETSCII hex digit (0-9,a-f,A-F)
+; On Exit:  A = hex digit 0-f
+;
+; Note: non-hex digits are undefinied
+;----------------------------------------------------------------
+TextToHex:
+        cmp #'a'
+        bcs @alpha
+        sec
+        sbc #'0'
+        rts
+@alpha:
+        and #$5F                ; Shift UPPER characters to PETSCII
+        sec
+        sbc #('a'-$a)           ; Map 'a'-'f' to $a-$f
+        rts
+
 ;-----------------------------------------------------
 ; StrOut:
 ;   Prior   : Prepare screen and character set   
@@ -618,6 +641,38 @@ ConvDec16:
 
 
 
+;--------------------------------------------------
+; Word32Out - prints a 4-byte word in hexadecimal
+;
+; inputs : a,x = POINTER to 4-byte word
+; outputs: All regs destroyed
+; calls  : WordOut
+; Uses: (zp) MemPtr (2 bytes)
+;--------------------------------------------------
+
+Word32Out:
+        sta MemPtr
+        stx MemPtr+1
+      
+        ldy #3
+        lda (MemPtr),y       ; MSB
+
+        tax
+        dey
+        lda (MemPtr),y       ; LSB
+
+        jsr WordOut
+
+        ldy #1
+        lda (MemPtr),y       ; MSB
+
+        tax
+        dey
+        lda (MemPtr),y       ; LSB
+
+        jsr WordOut
+        rts
+
 ;----------------------------------------------
 ; WordOut - prints a given word in hexadecimal
 ;
@@ -779,10 +834,10 @@ HelloWriteStr:    .byte CLS,PETSCII_UL
                   .byte "+---------------------------+",CR,CR,$00
 
 HelloReadStr:    .byte CLS,PETSCII_UL
-;-this is an alignment helper-------------->   v0.1 | 
-                  .byte "+--------------------------+",CR
-                  .byte "| Read Sector Utility v",VERS_MAJOR+'0','.',VERS_MINOR+'0'," |",CR
-                  .byte "+--------------------------+",CR,CR,$00
+;-this is an alignment helper---------------->   v0.1 | 
+                  .byte "+----------------------------+",CR
+                  .byte "| Read Sector Utility 2 v",VERS_MAJOR+'0','.',VERS_MINOR+'0'," |",CR
+                  .byte "+----------------------------+",CR,CR,$00
 
 
 Input_help_msg:   .byte CR,"ENTER for default(*) or ESC to exit:",CR,CR,$00
@@ -790,7 +845,7 @@ Input_help_msg:   .byte CR,"ENTER for default(*) or ESC to exit:",CR,CR,$00
 ByeStr:          .byte CR,"End of run. Have a great day.",CR,CR,$00
 
 HowMany_prompt:  .byte "How many sectors (500*) (1-65535)?",$00
-ReadMethod_prompt:  .byte "Read method (C)CHRIN or (M*)MACPTR?",$00
+ReadMethod_prompt:  .byte "Read method: (C)CHRIN (M*)MACPTR (S)SDCARD?",$00
 
 DEFAULT_FNAME:   .byte "sec.dat",$00    ; NOTE: *** change FileName_prompt to match this
 DEFAULT_LOG_FNAME: .byte "sec.log",$00  ; NOTE: *** change LogFileName_prompt to match this
@@ -806,12 +861,12 @@ FileName_review:   .byte       "File name:",$00
 
 ; Formatted for read params:
 ReadMethod_review:  .byte CR,CR,"Read method   :",$00
-FileName_review2:   .byte       "Data file name:",$00
-LogFileName_review: .byte       " Log file name:",$00
+FileName_review2:   .byte    "Data file name:",$00
+LogFileName_review: .byte    " Log file name:",$00
 
 ReadMethod_CHRIN:       .byte "CHRIN",$00
 ReadMethod_MACPTR:      .byte "MACPTR",$00
-
+ReadMethod_SDCARD:      .byte "SDCARD",$00
 
 overwrite_msgD: .byte "Data file ",DQ,$00
 overwrite_msgL: .byte "Log file ",DQ,$00
@@ -831,21 +886,29 @@ sector_msg1: .byte ": $",$00
 sector_msg2: .byte " -> $",$00
 sector_msg3: .byte CR,$00
 
-log_file_msg0:   .byte "Data file:",$00
-log_file_msg1:   .byte CR,CR,$00
+log_file_msg0:         .byte "Data file:",$00
+log_file_msg1:         .byte CR,CR,$00
+log_file_read_method0:  .byte CR,"Read method:",$00
+log_file_read_method1:  .byte CR,$00
 log_header_msg0:  .byte CR,"Sector $",$00
+log_header_msg1:  .byte ", LBA $",$00
 log_trailer_msg0: .byte CR,$00     ; For now
 sector_size_err0: .byte " Size error. Read ",$00
 sector_size_err1: .byte " bytes, expected ",$00
 sector_size_err2: .byte " bytes.",CR,$00
 
-log_errors_msg0: .byte " ",$00
-log_errors_msg1: .byte " compare errors.",CR,$00
-log_errors_msgx: .byte " compare error.",CR,$00 ; Yes, we went there.
+log_errors_msg0:   .byte " ",$00
+log_errors_msg1:   .byte " compare errors.",CR,$00
+log_errors_msgx:   .byte " compare error.",CR,$00 ; Yes, we went there.
+log_no_errors_msg: .byte "No errors.",CR,$00
+
+Get_sector_buffer_addr_fail:     .byte CR,"FAILED to get sector_buffer address. Sorry.",CR,CR,$00
+Get_sector_LBA_addr_fail:        .byte CR,"FAILED to get sector_LBA address. Sorry.",CR,CR,$00
 
 ; Strings used by OpenFileWrite:
 OverwriteStr:   .byte $40,$3A,$00       ; "@:" some assemblers don't encode this correctly
 WriteModeStr:   .byte ",s,w",$00
+AppendModeStr:  .byte ",s,a",$00
 
 ;------------------
 ; Buffers
@@ -854,6 +917,7 @@ kbd_buf:        .res KBD_BUF_SIZE       ; Cant be smaller than the other buffers
 str_buf:        .res STR_BUF_SIZE
 fname_buf:      .res STR_BUF_SIZE
 log_fname_buf:  .res STR_BUF_SIZE
+cmd_buf:        .res STR_BUF_SIZE       ; For reading the command channel:
 
 write_sector_buf:
         .res SECTOR_SIZE

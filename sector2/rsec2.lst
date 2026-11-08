@@ -1,0 +1,2995 @@
+ca65 V2.19 - Git 034f73a
+Main file   : rsec2.asm
+Current file: rsec2.asm
+
+000000r 1               ;---------------------------------------------------------------------------------------------
+000000r 1               ; rsec2.asm - Read Sector Utility
+000000r 1               ; Adds another read mode: sdcard_read_sector
+000000r 1               ;
+000000r 1               ; Pete Wyspianski (AKA Gollan)
+000000r 1               ; November 2026
+000000r 1               ; Ottawa, Canada
+000000r 1               ;
+000000r 1               ; Sector format:
+000000r 1               ;   512 bytes (256 words)
+000000r 1               ;   Filled with the sector number ($0000-$FFFF)
+000000r 1               ;   Checksum at $0002 and $0003 is the value that makes the entire sector sum to $FFFF
+000000r 1               ;---------------------------------------------------------------------------------------------
+000000r 1               
+000000r 1               VERS_MAJOR = 0
+000000r 1               VERS_MINOR = 1
+000000r 1               
+000000r 1                       .include "sec.inc"
+000000r 2               ;
+000000r 2               ;---------------------------------------------------------------------------------------------
+000000r 2               ; sec.inc - Common definitions for the write and read sector programs.
+000000r 2               ;
+000000r 2               ; Pete Wyspianski (AKA Gollan)
+000000r 2               ; October 2026
+000000r 2               ; Ottawa, Canada
+000000r 2               ;---------------------------------------------------------------------------------------------
+000000r 2               
+000000r 2               DEBUG = 1
+000000r 2               
+000000r 2               .ifdef DEBUG
+000000r 2               ; Aux JUMP Table
+000000r 2               AuxCharOut    = $4006
+000000r 2               AuxStrOut     = $4009
+000000r 2               AuxBStrOut    = $400c
+000000r 2               AuxRegsOut    = $400f
+000000r 2               AuxMemOut     = $4012
+000000r 2               AuxTrace      = $4015
+000000r 2               AuxTraceA     = $4018
+000000r 2               AuxByteOut    = $401B
+000000r 2               AuxWordOut    = $401E
+000000r 2               AuxRDTIMOut   = $4021
+000000r 2               .endif
+000000r 2               
+000000r 2               FILE_EXISTS_LFN = 5     ; LFN for the FileExists function (must be unique)
+000000r 2               SECTOR_FILE_LFN = 6     ; LFN for the sector file (read)
+000000r 2               LOG_FILE_LFN    = 7     ; LFN for the log file (write)
+000000r 2               
+000000r 2               ;---------------------------------------------------------
+000000r 2               ; Data structures and types
+000000r 2               ;---------------------------------------------------------
+000000r 2               ; Max file name/path will be 80 characters.
+000000r 2               KBD_BUF_SIZE=80         ; Keyboard input (can't be smaller than STR_BUF_SIZE)
+000000r 2               STR_BUF_SIZE=80         ; Number conversions and filenames
+000000r 2               
+000000r 2               SECTOR_SIZE = 512
+000000r 2               
+000000r 2               DEFAULT_NSECTORS = 500
+000000r 2               
+000000r 2               ;---------------------------------------------------------
+000000r 2               ; KERNAL
+000000r 2               ;---------------------------------------------------------
+000000r 2               CHRIN   = $FFCF ; In: a=char, Out: y-reg preserved
+000000r 2               CHROUT  = $FFD2 ; In: n/a  Out: a=char, xy-regs preserved
+000000r 2               SETLFS  = $FFBA ; In: a=LFN, x=device (8), y=secondary (LFN) Out: all regs preserved
+000000r 2               SETNAM  = $FFBD
+000000r 2               LOAD    = $FFD5
+000000r 2               GETIN   = $FFE4 ; In: n/a Out: a=char (or null), Out: xy-regs destroyed
+000000r 2               OPEN    = $FFC0
+000000r 2               CLOSE   = $FFC3
+000000r 2               CLRCHN  = $FFCC ; In: n/a Out: ax-regs destroyed
+000000r 2               READST  = $FFB7 ; In: n/a Out: a=status byte x-reg destroyed
+000000r 2               CHKIN   = $FFC6 ; Set channel for char input
+000000r 2               CHKOUT  = $FFC9 ; In: x=LFN Out: ax-regs destroyed
+000000r 2               PLOT    = $FFF0 ; Set/Get cursor XY coordinates
+000000r 2               EXTAPI  = $FEAB
+000000r 2               MACPTR  = $FF44 ; In: a=bytes to read (0 for up to 512), xy=ptr to buffer, C=0 inc dest, C=1 don't inc dest Out: C=0 supported, xy=bytes read C=1 not supported
+000000r 2               
+000000r 2               sdcard_read_sector=$E5E4 ; bank 3 In: sector_LBA=lba (4 bytes) Out: C=1 success, C=0 error (NOTE it is reversed)
+000000r 2               
+000000r 2               ; EXTAPI sub-functions:
+000000r 2               blink_enable = $14      ; x=0 blink, x!=0 no-blink
+000000r 2               
+000000r 2               READST_EOF = $40    ; EOF bit
+000000r 2               
+000000r 2               ; ZP Bank Registers:
+000000r 2               RAM_BANK_REG = $00
+000000r 2               ROM_BANK_REG = $01
+000000r 2               
+000000r 2               ; UNPUBLISHED KERNAL ADDRESSES (valid for R49):
+000000r 2               SDCARD_CHECK_ALIVE_ADDR = $E72E     ; Bank 3
+000000r 2               CLEAR_BUFFER_ADDR       = $C5C1     ; Bank 3
+000000r 2               
+000000r 1               
+000000r 1               ;---------------------------------------------------------
+000000r 1               ; Zero Page - $0022-$007F are available
+000000r 1               ; The linker automatically starts this segment at $22
+000000r 1               ;---------------------------------------------------------
+000000r 1                   .zeropage
+000000r 1                   .org $0022  ; Makes the *.lst file easier to read
+000022  1  xx xx        AuxsZP:             .res 2    ; The auxs serial driver uses $22, so reserve it
+000024  1  xx xx        MemPtr:             .res 2    ; 2 bytes
+000026  1  xx xx        MemPtr1:            .res 2    ; 2 bytes
+000028  1  xx xx        MemPtr2:            .res 2    ; 2 bytes - used by higher-level  functions
+00002A  1  xx xx        SecPtrLow:          .res 2    ; Points to sector_buf ($000..$0FF)
+00002C  1  xx xx        SecPtrHigh:         .res 2    ; Points to sector_buf ($100..$1FF)
+00002E  1  xx xx        scratch0:           .res 2
+000030  1  xx xx        scratch1:           .res 2
+000032  1  xx xx        nSectors:           .res 2    ; Number of sectors
+000034  1  xx xx        CurSector:          .res 2    ; Current sector
+000036  1  xx xx        SectorCS:           .res 2    ; Sector checksum
+000038  1  xx           read_method_flag:   .res 1    ; Read method: $01=CHRIN $80=MACPTR $40=sdcard_read_sector
+000039  1  xx           EOF_flag:           .res 1   ; $FF = read file EOF reached
+00003A  1  xx xx        bytes_read:         .res 2   ; ReadSector (should be $200) on return
+00003C  1  xx xx        bytes_checked:      .res 2   ; CompareSector - counts bytes checked
+00003E  1  xx xx        byte_index:         .res 2   ; CompareSectors
+000040  1  xx           wbyte:              .res 1   ; Write buffer byte in CompareSectors
+000041  1  xx           rbyte:              .res 1   ; Read buffer byte in CompareSectors
+000042  1  xx xx        compare_errors:     .res 2   ; Number of compare errors in a sector
+000044  1  xx xx        compare_hdr_flag:   .res 2   ; 0 = not written, $FF = written
+000046  1  xx xx        buf_ptr:            .res 2   ; Buffer used by GetLineInput
+000048  1               
+000048  1               ; These only apply when read mode is SDCARD:
+000048  1  xx xx        sector_lba_ptr:     .res 2   ; Points to KERNAL sector_lba in RAM bank 0
+00004A  1  xx xx        sector_buffer_ptr:  .res 2   ; Points to KERNAL sector_buffer in RAM bank 0
+00004C  1  xx xx xx xx  cur_lba:            .res 4   ; Current LBA
+000050  1  xx xx xx xx  data_file_size:     .res 4   ; File size in bytes (8 hex digits)
+000054  1  xx xx xx xx  data_file_sectors:  .res 4   ; File size in sectors (only first THREE bytes are valid)
+000058  1  xx xx        data_file_last_sector: .res 2   ; The last sector in a file using ReadSector_SDCARD
+00005A  1               
+00005A  1               ; read_method_flag status bits:
+00005A  1               CHRIN_flag  = $01
+00005A  1               MACPTR_flag = $80
+00005A  1               SDCARD_flag = $40
+00005A  1               
+00005A  1               ;--------------------------------------------------
+00005A  1               ; ca65:
+00005A  1                       .segment "CODE"
+00005A  1                       .org $0801
+000801  1               
+000801  1               ;--------------------------------------------------
+000801  1               ; X16-ASM:
+000801  1               ;        .list "sectorw.lst"
+000801  1               ;        .direct
+000801  1               ;        * = $801
+000801  1               
+000801  1               ; BASIC stub that SYSes to $08d
+000801  1  0B 08 13 02      .byte $0b, $08, $13, $02, $9e, $32, $30, $36, $31, $00, $00, $00
+000805  1  9E 32 30 36  
+000809  1  31 00 00 00  
+00080D  1               
+00080D  1               ;---------------------------------------------
+00080D  1               ; MAIN
+00080D  1               ;---------------------------------------------
+00080D  1               main:
+00080D  1  D8                   cld                 ; Just in case
+00080E  1               
+00080E  1  A9 0D                lda #<HelloReadStr
+000810  1  A2 13                ldx #>HelloReadStr
+000812  1  20 EE 10             jsr StrOut
+000815  1               
+000815  1  A9 6E                lda #<Input_help_msg
+000817  1  A2 13                ldx #>Input_help_msg
+000819  1  20 EE 10             jsr StrOut
+00081C  1               
+00081C  1  20 F9 0D             jsr GetReadParams
+00081F  1  90 03                bcc @rrp
+000821  1               
+000821  1               @exit2:
+000821  1  4C D2 08             jmp @exit               ; ESC pressed, so exit.
+000824  1               
+000824  1               @rrp:
+000824  1  20 9D 0D             jsr ReviewReadParams
+000827  1  B0 F8                bcs @exit2              ; ESC pressed or "no" selected, so exit.
+000829  1               
+000829  1  20 24 0D             jsr OpenFileRead
+00082C  1  B0 F3                bcs @exit2              ; Taken if file open failed
+00082E  1               
+00082E  1  A5 38                lda read_method_flag
+000830  1  29 40                and #SDCARD_flag        ; Method SDCARD?
+000832  1  F0 17                beq @init_common        ; Taken if NOT
+000834  1               
+000834  1               ; These are only required for SDCARD method:
+000834  1               
+000834  1  20 9F 0C             jsr GetFirstLBA
+000837  1  90 03                bcc @gfl_OK
+000839  1               
+000839  1               @exit_close2:
+000839  1  4C CC 08             jmp @exit_close
+00083C  1               
+00083C  1               @gfl_OK:
+00083C  1  20 F3 0B             jsr GetFileSize
+00083F  1  B0 F8                bcs @exit_close2
+000841  1               
+000841  1  20 B9 0B             jsr Get_sector_LBA_addr
+000844  1  B0 F3                bcs @exit_close2
+000846  1               
+000846  1  20 78 0B             jsr Get_sector_buffer_addr
+000849  1  B0 EE                bcs @exit_close2
+00084B  1               
+00084B  1               @init_common:
+00084B  1               
+00084B  1  20 F3 0E             jsr OpenLogFileWrite
+00084E  1  B0 E9                bcs @exit_close2        ; Taken if file open failed
+000850  1               
+000850  1               @Read_sectors:
+000850  1               
+000850  1  64 34                stz CurSector
+000852  1  64 35                stz CurSector+1
+000854  1  64 39                stz EOF_flag
+000856  1               
+000856  1  A9 35                lda #<reading_msg
+000858  1  A2 15                ldx #>reading_msg
+00085A  1  20 EE 10             jsr StrOut
+00085D  1               
+00085D  1               @next_sector:
+00085D  1               
+00085D  1               ; See if the user wants to exit:
+00085D  1  20 E4 FF             jsr GETIN             ; Trashes y-reg
+000860  1  C9 00                cmp #0
+000862  1  F0 08                beq @cont             ; Taken if no key
+000864  1  C9 1B                cmp #ESC              ; User entered ESC?
+000866  1  F0 72                beq @exit_halt        ; Taken if so...
+000868  1  C9 03                cmp #BREAK            ; User entered ctrl-C?
+00086A  1  F0 6E                beq @exit_halt        ; Taken if so...
+00086C  1               
+00086C  1               @cont:
+00086C  1  A5 38                lda read_method_flag
+00086E  1  29 01                and #CHRIN_flag
+000870  1  D0 10                bne @method_chrin
+000872  1  A5 38                lda read_method_flag
+000874  1  29 80                and #MACPTR_flag
+000876  1  D0 05                bne @method_MACPTR
+000878  1               
+000878  1               ; Otherwise... method_sdcard
+000878  1  20 8C 0A             jsr ReadSector_SDCARD
+00087B  1  80 08                bra @read_common
+00087D  1               
+00087D  1               @method_MACPTR:
+00087D  1  20 F1 0A             jsr ReadSector_MACPTR
+000880  1  80 03                bra @read_common
+000882  1               
+000882  1               @method_chrin:
+000882  1  20 28 0B             jsr ReadSector_CHRIN
+000885  1               
+000885  1               @read_common:
+000885  1  B0 5C                bcs @exit_error         ; Taken if something went wrong
+000887  1               
+000887  1               ; MACPTR NOTE:
+000887  1               ;   If the file is a multiple of 512 bytes, MACPTR returns the last sector
+000887  1               ;   WITHOUT EOF being set. On the NEXT call it returns zero bytes read and
+000887  1               ;   EOF set. For simplicity here, we will interpret bytes_read = 0 as EOF.
+000887  1               ;   Ideally we'd also check EOF (we can't check EOF with this logic because
+000887  1               ;   CHRIN and most of the time MACPTR set EOF when the last sector is
+000887  1               ;   sill in play and should be compared).
+000887  1               
+000887  1  A5 3A                lda bytes_read          ; See MACPTR NOTE above.
+000889  1  05 3B                ora bytes_read+1
+00088B  1  F0 3A                beq @done
+00088D  1               
+00088D  1  20 AC 0E             jsr OpenLogFileAppend
+000890  1  B0 3A                bcs @exit_close         ; Taken if file open failed
+000892  1               
+000892  1  20 01 09             jsr Log_header
+000895  1               
+000895  1  20 E7 0F             jsr CreateSector        ; Make an exemplar sector using CurSector
+000898  1  20 07 0A             jsr CompareSectors      ; Logs any errors
+00089B  1  A9 2E                lda #'.'                ; Good sector indicator
+00089D  1  90 02                bcc @compare_ok
+00089F  1  A9 58                lda #'x'                ; Bad sector indicator
+0008A1  1               @compare_ok:
+0008A1  1               
+0008A1  1  20 D2 FF             jsr CHROUT
+0008A4  1  E6 34                inc CurSector
+0008A6  1  D0 02                bne @inc_cur_lba
+0008A8  1  E6 35                inc CurSector+1
+0008AA  1               
+0008AA  1               ; Only needed if read_method is SDCARD:
+0008AA  1               
+0008AA  1               @inc_cur_lba:
+0008AA  1  A5 38                lda read_method_flag
+0008AC  1  29 40                and #SDCARD_flag        ; Method SDCARD?
+0008AE  1  F0 10                beq @check_done         ; Taken if NOT (skip LBA increment)
+0008B0  1               
+0008B0  1  A0 00                ldy #0                  ; Increment the 4 byte cur_lba
+0008B2  1               @next_lba_byte:
+0008B2  1  B9 4C 00             lda cur_lba,y
+0008B5  1  1A                   inc
+0008B6  1  99 4C 00             sta cur_lba,y
+0008B9  1  D0 05                bne @check_done
+0008BB  1  C8                   iny
+0008BC  1  C0 04                cpy #4
+0008BE  1  D0 F2                bne @next_lba_byte
+0008C0  1               
+0008C0  1               @check_done:
+0008C0  1  20 A3 0E             jsr CloseLogFile
+0008C3  1  24 39                bit EOF_flag
+0008C5  1  10 96                bpl @next_sector
+0008C7  1               
+0008C7  1               @done:
+0008C7  1  A9 0D                lda #CR
+0008C9  1  20 D2 FF             jsr CHROUT
+0008CC  1               
+0008CC  1               @exit_close:
+0008CC  1  20 A3 0E             jsr CloseLogFile
+0008CF  1  20 1E 0D             jsr CloseFileRead
+0008D2  1               
+0008D2  1               @exit:
+0008D2  1  A9 96                lda #<ByeStr
+0008D4  1  A2 13                ldx #>ByeStr
+0008D6  1  20 EE 10             jsr StrOut
+0008D9  1  60                   rts
+0008DA  1               
+0008DA  1               ; ESC or ctrl-c pressed during write:
+0008DA  1               @exit_halt:
+0008DA  1  A9 63                lda #<Halt_msg
+0008DC  1  A2 15                ldx #>Halt_msg
+0008DE  1  20 EE 10             jsr StrOut
+0008E1  1  80 E9                bra @exit_close
+0008E3  1               
+0008E3  1               @exit_error:
+0008E3  1  A9 6F                lda #<read_err_msg0
+0008E5  1  A2 15                ldx #>read_err_msg0
+0008E7  1  20 EE 10             jsr StrOut
+0008EA  1  A5 34                lda CurSector
+0008EC  1  A6 35                ldx CurSector+1
+0008EE  1  20 14 12             jsr WordOut
+0008F1  1  A9 7A                lda #<read_err_msg1
+0008F3  1  A2 15                ldx #>read_err_msg1
+0008F5  1  20 EE 10             jsr StrOut
+0008F8  1  80 D2                bra @exit_close
+0008FA  1               
+0008FA  1               ;-----------------------------------------------------------
+0008FA  1               ; Log_init - Call PRIOR to sector read
+0008FA  1               ;      Initializes variables for Log
+0008FA  1               ;
+0008FA  1               ; On Entry: * CurSector set to the current sector number
+0008FA  1               ;           * LOG_FILE_LFN is open for writing
+0008FA  1               ;           * CHKOUT set to LOG_FILE_LFN
+0008FA  1               ;
+0008FA  1               ; On Exit:  Writes the header to the log file
+0008FA  1               ;
+0008FA  1               ; Uses: (zp) byte_index, wbyte, rbyte, compare_errors
+0008FA  1               ; Note: this code assumes that SECTOR_SIZE is 512
+0008FA  1               ;-----------------------------------------------------------
+0008FA  1               Log_init:
+0008FA  1               
+0008FA  1  64 42                stz compare_errors
+0008FC  1  64 43                stz compare_errors+1
+0008FE  1               
+0008FE  1  64 44                stz compare_hdr_flag        ; 0 = not written, $FF = written
+000900  1               
+000900  1  60                   rts
+000901  1               
+000901  1               ;-----------------------------------------------------------
+000901  1               ; Log_header - Sends the sector compare header to the
+000901  1               ;              log file the *FIRST* time it is called.
+000901  1               ;
+000901  1               ; On Entry: Log file must be open by caller
+000901  1               ; On Exit:  sets compare_hdr_flag
+000901  1               ;
+000901  1               ; Uses: (zp) compare_hdr_flag
+000901  1               ;-----------------------------------------------------------
+000901  1               Log_header:
+000901  1               
+000901  1  24 44                bit compare_hdr_flag    ; Header previously written?
+000903  1  30 2B                bmi @exit               ; Taken if so
+000905  1               
+000905  1  64 44                stz compare_hdr_flag
+000907  1  C6 44                dec compare_hdr_flag    ; Set the flag
+000909  1               
+000909  1  A9 B5                lda #<log_header_msg0   ; Sector number
+00090B  1  A2 15                ldx #>log_header_msg0
+00090D  1  20 EE 10             jsr StrOut
+000910  1  A5 34                lda CurSector
+000912  1  A6 35                ldx CurSector+1
+000914  1  20 14 12             jsr WordOut
+000917  1               
+000917  1  A5 38                lda read_method_flag
+000919  1  29 40                and #SDCARD_flag        ; Method SDCARD?
+00091B  1  F0 0E                beq @wrap               ; Taken if NOT
+00091D  1               
+00091D  1               ; Puts the LBA on the same line as SECTOR:
+00091D  1               
+00091D  1  A9 BF                lda #<log_header_msg1   ; Sector number
+00091F  1  A2 15                ldx #>log_header_msg1
+000921  1  20 EE 10             jsr StrOut
+000924  1               
+000924  1  A9 4C                lda #<cur_lba
+000926  1  A2 00                ldx #>cur_lba
+000928  1  20 F9 11             jsr Word32Out           ; Print the 4 bytes of the current LBA
+00092B  1               
+00092B  1               @wrap:
+00092B  1  A9 0D                lda #CR
+00092D  1  20 D2 FF             jsr CHROUT
+000930  1               
+000930  1               @exit:
+000930  1  60                   rts
+000931  1               
+000931  1               ;-----------------------------------------------------------
+000931  1               ; Log_size - Check for a sector size error and writes in
+000931  1               ;            the log file if it is found.
+000931  1               ;
+000931  1               ; On Entry: n/a
+000931  1               ; On Exit:  n/a
+000931  1               ;
+000931  1               ; Uses: (zp) bytes_read
+000931  1               ;-----------------------------------------------------------
+000931  1               Log_size:
+000931  1               
+000931  1               ; Report if the sector size was wrong:
+000931  1               
+000931  1  A5 3A                lda bytes_read
+000933  1  C9 00                cmp #<SECTOR_SIZE
+000935  1  D0 06                bne @size_error
+000937  1  A5 3B                lda bytes_read+1
+000939  1  C9 02                cmp #>SECTOR_SIZE
+00093B  1  F0 44                beq @exit               ; Taken if size is OK (exit)
+00093D  1               
+00093D  1               @size_error:
+00093D  1               
+00093D  1  A9 C9                lda #<sector_size_err0
+00093F  1  A2 15                ldx #>sector_size_err0
+000941  1  20 EE 10             jsr StrOut
+000944  1               
+000944  1               ; Print bytes_read in decimal. Set up call to Hex16Dec:
+000944  1  A9 E0                lda #<str_buf
+000946  1  85 24                sta MemPtr
+000948  1  A9 16                lda #>str_buf
+00094A  1  85 25                sta MemPtr+1
+00094C  1  A5 3A                lda bytes_read
+00094E  1  A6 3B                ldx bytes_read+1
+000950  1  20 14 11             jsr Hex16Dec
+000953  1               
+000953  1  A9 E0                lda #<str_buf           ; Show compare_errors in decimal
+000955  1  A2 16                ldx #>str_buf
+000957  1  20 EE 10             jsr StrOut
+00095A  1               
+00095A  1  A9 DC                lda #<sector_size_err1
+00095C  1  A2 15                ldx #>sector_size_err1
+00095E  1  20 EE 10             jsr StrOut
+000961  1               
+000961  1               ; Print SECTOR_SIZE in decimal. StrOut uses MemPtr.
+000961  1  A9 E0                lda #<str_buf
+000963  1  85 24                sta MemPtr
+000965  1  A9 16                lda #>str_buf
+000967  1  85 25                sta MemPtr+1
+000969  1  A9 00                lda #<SECTOR_SIZE
+00096B  1  A2 02                ldx #>SECTOR_SIZE
+00096D  1  20 14 11             jsr Hex16Dec
+000970  1               
+000970  1  A9 E0                lda #<str_buf           ; Show compare_errors in decimal
+000972  1  A2 16                ldx #>str_buf
+000974  1  20 EE 10             jsr StrOut
+000977  1               
+000977  1  A9 EE                lda #<sector_size_err2
+000979  1  A2 15                ldx #>sector_size_err2
+00097B  1  20 EE 10             jsr StrOut
+00097E  1               
+00097E  1  20 A3 0E             jsr CloseLogFile
+000981  1               @exit:
+000981  1  60                   rts
+000982  1               
+000982  1               ;-----------------------------------------------------------
+000982  1               ; Log_error
+000982  1               ;       Reports an error from CompareSectors
+000982  1               ;
+000982  1               ; On Entry: * CurSector set to the current sector number
+000982  1               ;           * byte_index set to the current byte within
+000982  1               ;             the sector buffer
+000982  1               ;           * wbyte and rbyte are the bytes at byte_index
+000982  1               ;           * LOG_FILE_LFN is open for writing
+000982  1               ;           * CHKOUT set to LOG_FILE_LFN
+000982  1               ;
+000982  1               ; On Exit:  Displays appropriate message
+000982  1               ;           Increments compare_errors
+000982  1               ;           All regs and variables are preserved
+000982  1               ;
+000982  1               ; Uses: (zp) byte_index, wbyte, rbyte, compare_errors
+000982  1               ; Note: this code assumes that SECTOR_SIZE is 512
+000982  1               ;-----------------------------------------------------------
+000982  1               Log_error:
+000982  1  48                   pha
+000983  1  DA                   phx
+000984  1  5A                   phy
+000985  1               
+000985  1  E6 42                inc compare_errors
+000987  1  D0 02                bne @no_carry
+000989  1  E6 43                inc compare_errors+1
+00098B  1               @no_carry:
+00098B  1               
+00098B  1               ;   $xxx: $xx -> $yy
+00098B  1               
+00098B  1  A9 88                lda #<sector_msg0
+00098D  1  A2 15                ldx #>sector_msg0
+00098F  1  20 EE 10             jsr StrOut
+000992  1               
+000992  1  A5 3E                lda byte_index
+000994  1  A6 3F                ldx byte_index+1
+000996  1  20 1C 12             jsr Hex3Out
+000999  1               
+000999  1  A9 8B                lda #<sector_msg1
+00099B  1  A2 15                ldx #>sector_msg1
+00099D  1  20 EE 10             jsr StrOut
+0009A0  1               
+0009A0  1  A5 40                lda wbyte
+0009A2  1  20 24 12             jsr ByteOut
+0009A5  1               
+0009A5  1  A9 8F                lda #<sector_msg2
+0009A7  1  A2 15                ldx #>sector_msg2
+0009A9  1  20 EE 10             jsr StrOut
+0009AC  1               
+0009AC  1  A5 41                lda rbyte
+0009AE  1  20 24 12             jsr ByteOut
+0009B1  1               
+0009B1  1  A9 95                lda #<sector_msg3
+0009B3  1  A2 15                ldx #>sector_msg3
+0009B5  1  20 EE 10             jsr StrOut
+0009B8  1               
+0009B8  1               @exit:
+0009B8  1  7A                   ply
+0009B9  1  FA                   plx
+0009BA  1  68                   pla
+0009BB  1  60                   rts
+0009BC  1               
+0009BC  1               ;-----------------------------------------------------------
+0009BC  1               ; Log_post - Call AFTER sector read
+0009BC  1               ;      Writes summary for the current sector to log file
+0009BC  1               ;
+0009BC  1               ; On Entry: * CurSector set to the current sector number
+0009BC  1               ;           * LOG_FILE_LFN is open for writing
+0009BC  1               ;           * CHKOUT set to LOG_FILE_LFN
+0009BC  1               ;
+0009BC  1               ; On Exit:  Writes the summary to the log file
+0009BC  1               ;
+0009BC  1               ; Uses: (zp) byte_index, wbyte, rbyte, compare_errors
+0009BC  1               ; Note: this code assumes that SECTOR_SIZE is 512
+0009BC  1               ;-----------------------------------------------------------
+0009BC  1               Log_post:
+0009BC  1               
+0009BC  1  A5 42                lda compare_errors
+0009BE  1  05 43                ora compare_errors+1
+0009C0  1  D0 09                bne @non_zero           ; Taken if there were errors in this sector.
+0009C2  1               
+0009C2  1  A9 1C                lda #<log_no_errors_msg   ; No errors
+0009C4  1  A2 16                ldx #>log_no_errors_msg
+0009C6  1  20 EE 10             jsr StrOut
+0009C9  1  80 3B                bra @exit
+0009CB  1               
+0009CB  1               @non_zero:
+0009CB  1               ; Print the number of errors:
+0009CB  1  A9 F7                lda #<log_errors_msg0   ; Just a space before the number.
+0009CD  1  A2 15                ldx #>log_errors_msg0
+0009CF  1  20 EE 10             jsr StrOut
+0009D2  1               
+0009D2  1               ; Set up call to Hex16Dec:
+0009D2  1  A9 E0                lda #<str_buf
+0009D4  1  85 24                sta MemPtr
+0009D6  1  A9 16                lda #>str_buf
+0009D8  1  85 25                sta MemPtr+1
+0009DA  1  A5 42                lda compare_errors
+0009DC  1  A6 43                ldx compare_errors+1
+0009DE  1  20 14 11             jsr Hex16Dec
+0009E1  1               
+0009E1  1  A9 E0                lda #<str_buf           ; Show compare_errors in decimal
+0009E3  1  A2 16                ldx #>str_buf
+0009E5  1  20 EE 10             jsr StrOut
+0009E8  1               
+0009E8  1  A5 42                lda compare_errors      ; Is it one error?
+0009EA  1  C9 01                cmp #1
+0009EC  1  D0 0A                bne @errors_msg         ; Taken if NOT
+0009EE  1  A5 43                lda compare_errors+1
+0009F0  1  D0 06                bne @errors_msg         ; Taken if NOT
+0009F2  1               
+0009F2  1  A9 0B                lda #<log_errors_msgx   ; Singular error message
+0009F4  1  A2 16                ldx #>log_errors_msgx
+0009F6  1  80 04                bra @cont
+0009F8  1               
+0009F8  1               @errors_msg:
+0009F8  1  A9 F9                lda #<log_errors_msg1
+0009FA  1  A2 15                ldx #>log_errors_msg1
+0009FC  1               @cont:
+0009FC  1  20 EE 10             jsr StrOut
+0009FF  1               
+0009FF  1  A9 C7                lda #<log_trailer_msg0  ; Make some more space
+000A01  1  A2 15                ldx #>log_trailer_msg0
+000A03  1  20 EE 10             jsr StrOut
+000A06  1               
+000A06  1               @exit:
+000A06  1  60                   rts
+000A07  1               
+000A07  1               ;-----------------------------------------------------------
+000A07  1               ; CompareSectors
+000A07  1               ;       Compares an exemplar sector in write_sector_buf with
+000A07  1               ;       the sector in read_sector_buf and calls Log
+000A07  1               ;       if there are errors.
+000A07  1               ;
+000A07  1               ;       It only compares "bytes_read" bytes of the buffer.
+000A07  1               ;
+000A07  1               ;
+000A07  1               ; On Entry: CurSector is the "expected" sector number.
+000A07  1               ;           write_sector_buf contains a sector created by CreateSector
+000A07  1               ;           read_sector_buf contains a sector under scrutiny
+000A07  1               ;
+000A07  1               ; On Exit:  C=0 - sectors match
+000A07  1               ;           C=1 - sectors don't match (Log was called)
+000A07  1               ;
+000A07  1               ; Uses: (zp) byte_index, wbyte, rbyte
+000A07  1               ; Note: this code assumes that SECTOR_SIZE is 512
+000A07  1               ;-----------------------------------------------------------
+000A07  1               CompareSectors:
+000A07  1  64 3E                stz byte_index
+000A09  1  64 3F                stz byte_index+1
+000A0B  1  64 3C                stz bytes_checked
+000A0D  1  64 3D                stz bytes_checked+1
+000A0F  1               
+000A0F  1               ; Prep the log file to receive error reports:
+000A0F  1               
+000A0F  1  A2 07                ldx #LOG_FILE_LFN
+000A11  1  20 C9 FF             jsr CHKOUT
+000A14  1               
+000A14  1  20 FA 08             jsr Log_init
+000A17  1               
+000A17  1               ; Is there anything to check?
+000A17  1  A5 3A                lda bytes_read
+000A19  1  05 3B                ora bytes_read+1
+000A1B  1  F0 58                beq @wrap_up            ; Don't do any comparisons
+000A1D  1               
+000A1D  1               ; Compare the sector in two chunks:
+000A1D  1               
+000A1D  1  A0 00               ldy #0                  ; Index
+000A1F  1               @next0:
+000A1F  1  84 3E                sty byte_index          ; Keep the buffer array index LSB in sync
+000A21  1  B9 20 18             lda write_sector_buf,y
+000A24  1  85 40                sta wbyte
+000A26  1  B9 20 1A             lda read_sector_buf,y
+000A29  1  85 41                sta rbyte
+000A2B  1  A5 40                lda wbyte
+000A2D  1  C5 41                cmp rbyte                ; Are they the same?
+000A2F  1  F0 03                beq @good0               ; Taken if so
+000A31  1  20 82 09             jsr Log_error            ; Bytes are NOT the same.
+000A34  1               @good0:
+000A34  1  C8                   iny
+000A35  1               ; See if we have reached bytes_read:
+000A35  1  A5 3B                lda bytes_read+1        ; The index is advanced by 1, so compare with bytes_read is valid
+000A37  1  C5 3F                cmp byte_index+1
+000A39  1  D0 04                bne @not_done0
+000A3B  1  C4 3A                cpy bytes_read
+000A3D  1  F0 36                beq @wrap_up             ; Taken if bytes_read bytes have been compared
+000A3F  1               
+000A3F  1               @not_done0:
+000A3F  1  C0 00                cpy #0
+000A41  1  D0 DC                bne @next0
+000A43  1               
+000A43  1  E6 3F                inc byte_index+1        ; Keep the buffer array index MSB in sync
+000A45  1               
+000A45  1               ; Check for the case where bytes_read = $100:
+000A45  1               ; (The check in the lower buffer loop won't catch it because the MSB of byte_index isn't incremented until the loop exits)
+000A45  1               
+000A45  1  A5 3A                lda bytes_read
+000A47  1  D0 06                bne @upper_buffer       ; Not $100
+000A49  1  A5 3B                lda bytes_read+1
+000A4B  1  C9 01                cmp #$1                 ; $100?
+000A4D  1  F0 26                beq @wrap_up            ; Taken if so
+000A4F  1               
+000A4F  1               @upper_buffer:
+000A4F  1               
+000A4F  1  A0 00               ldy #0                   ; Index
+000A51  1               @next1:
+000A51  1  84 3E                sty byte_index          ; Keep the buffer array index LSB in sync
+000A53  1  B9 20 19             lda write_sector_buf+$100,y
+000A56  1  85 40                sta wbyte
+000A58  1  B9 20 1B             lda read_sector_buf+$100,y
+000A5B  1  85 41                sta rbyte
+000A5D  1  A5 40                lda wbyte
+000A5F  1  C5 41                cmp rbyte               ; Are they the same?
+000A61  1  F0 03                beq @good1              ; Taken if so
+000A63  1  20 82 09             jsr Log_error           ; Bytes are NOT the same.
+000A66  1               @good1:
+000A66  1  C8                   iny
+000A67  1               ; See if we have reached bytes_read:
+000A67  1  A5 3B                lda bytes_read+1        ; The index is advanced by 1, so compare with bytes_read is valid
+000A69  1  C5 3F                cmp byte_index+1
+000A6B  1  D0 04                bne @not_done1
+000A6D  1  C4 3A                cpy bytes_read
+000A6F  1  F0 04                beq @wrap_up             ; Taken if bytes_read bytes have been compared
+000A71  1               
+000A71  1               @not_done1:
+000A71  1  C0 00                cpy #0
+000A73  1  D0 DC                bne @next1
+000A75  1               
+000A75  1               @wrap_up:
+000A75  1  A5 42                lda compare_errors
+000A77  1  A6 43                ldx compare_errors+1
+000A79  1               
+000A79  1  20 31 09             jsr Log_size
+000A7C  1  20 BC 09             jsr Log_post
+000A7F  1  20 CC FF             jsr CLRCHN
+000A82  1               
+000A82  1  A5 42                lda compare_errors
+000A84  1  05 43                ora compare_errors+1
+000A86  1  D0 02                bne @exit_err                   ; Taken if compare_errors is not zero
+000A88  1               
+000A88  1               @exit_OK:
+000A88  1  18                   clc
+000A89  1  60                   rts
+000A8A  1               
+000A8A  1               ; There were compare  errors in this branch
+000A8A  1               @exit_err:
+000A8A  1  38                   sec
+000A8B  1  60                   rts
+000A8C  1               
+000A8C  1               
+000A8C  1               ;-----------------------------------------------------------
+000A8C  1               ; ReadSector_SDCARD
+000A8C  1               ;       Read a sector into read_sector_buf from the open file
+000A8C  1               ;       using sdcard_read_sector (direct bulk read)
+000A8C  1               ;
+000A8C  1               ; On Entry: SECTOR_FILE_LFN is open for read
+000A8C  1               ;           sector_lba has the LBA to read (4 bytes)
+000A8C  1               ;
+000A8C  1               ; On Exit:  C=0 - Sector was read successfully
+000A8C  1               ;           bytes_read = number of bytes read
+000A8C  1               ;
+000A8C  1               ;           C=1 - Sector read failed
+000A8C  1               ;
+000A8C  1               ; Uses: (zp) bytes_read, read_sector_buf
+000A8C  1               ;
+000A8C  1               ; Note: this code assumes that SECTOR_SIZE is 512
+000A8C  1               ;-----------------------------------------------------------
+000A8C  1               ReadSector_SDCARD:
+000A8C  1               
+000A8C  1  64 3A                stz bytes_read
+000A8E  1  64 3B                stz bytes_read+1
+000A90  1               
+000A90  1               ; Use sdcard_read_sector to read 512 bytes:
+000A90  1               
+000A90  1  A5 00                lda RAM_BANK_REG        ; Save current RAM_BANK and set RAM_BANK to 0
+000A92  1  85 2E                sta scratch0
+000A94  1  64 00                stz RAM_BANK_REG
+000A96  1               
+000A96  1  A5 01                lda ROM_BANK_REG        ; Save current ROM_BANK and set ROM_BANK to 3 (FAT32)
+000A98  1  85 30                sta scratch1
+000A9A  1  A9 03                lda #3
+000A9C  1  85 01                sta ROM_BANK_REG
+000A9E  1               
+000A9E  1               ; Copy current LBA to sector_lba:
+000A9E  1  A0 00                ldy #0
+000AA0  1               @next_LBA:
+000AA0  1  B9 4C 00             lda cur_lba,y
+000AA3  1  91 48                sta (sector_lba_ptr),y
+000AA5  1  C8                   iny
+000AA6  1  C0 04                cpy #4
+000AA8  1  D0 F6                bne @next_LBA
+000AAA  1               
+000AAA  1  20 E4 E5             jsr sdcard_read_sector  ; Read 512 bytes into sector_buffer
+000AAD  1               
+000AAD  1  A5 2E                lda scratch0            ; Restore RAM and ROM banks
+000AAF  1  85 00                sta RAM_BANK_REG
+000AB1  1  A5 30                lda scratch1
+000AB3  1  85 01                sta ROM_BANK_REG
+000AB5  1  90 38                bcc @exit_err           ; C=0 FAILED
+000AB7  1               
+000AB7  1               ; Read success so set bytes_read:
+000AB7  1  A9 00                lda #<SECTOR_SIZE
+000AB9  1  85 3A                sta bytes_read
+000ABB  1  A9 02                lda #>SECTOR_SIZE
+000ABD  1  85 3B                sta bytes_read+1
+000ABF  1               
+000ABF  1               
+000ABF  1               ; Copy KERNAL sector buffer to our buffer:
+000ABF  1               
+000ABF  1  64 00                stz RAM_BANK_REG        ; select KERNAL RAM bank
+000AC1  1               
+000AC1  1               ; Copy lower half of sector:
+000AC1  1  A0 00               ldy #0                   ; Index
+000AC3  1               @next0:
+000AC3  1  B1 4A                lda (sector_buffer_ptr),y       ; Fetch byte from KERNAL's buffer LOWER HALF
+000AC5  1  99 20 1A             sta read_sector_buf,y           ; Save it in our buffer' LOWER HALF
+000AC8  1  C8                   iny
+000AC9  1  D0 F8                bne @next0
+000ACB  1               
+000ACB  1               ; Copy upper half of sector:
+000ACB  1  E6 4B               inc sector_buffer_ptr+1         ; Add $100 to point to second half of buffer
+000ACD  1               
+000ACD  1  A0 00               ldy #0                   ; Index
+000ACF  1               @next1:
+000ACF  1  B1 4A                lda (sector_buffer_ptr),y       ; Fetch byte from KERNAL's buffer UPPER HALF
+000AD1  1  99 20 1B             sta read_sector_buf+$100,y      ; Save it in our buffer's UPPER HALF
+000AD4  1  C8                   iny
+000AD5  1  D0 F8                bne @next1
+000AD7  1  C6 4B                dec sector_buffer_ptr+1         ; Restore sector_buffer_ptr
+000AD9  1               
+000AD9  1  A5 2E                lda scratch0
+000ADB  1  85 00                sta RAM_BANK_REG        ; Restore original RAM bank
+000ADD  1               
+000ADD  1               ; Compare cur_sector to data_file_last_sector to see if we are done:
+000ADD  1               
+000ADD  1  A5 35                lda CurSector+1
+000ADF  1  C5 59                cmp data_file_last_sector+1
+000AE1  1  D0 06                bne @exit_OK            ; Not done
+000AE3  1  A5 34                lda CurSector
+000AE5  1  C5 58                cmp data_file_last_sector
+000AE7  1  F0 02                beq @exit_EOF           ; Taken if done
+000AE9  1               
+000AE9  1               ; Success exit:
+000AE9  1               @exit_OK:
+000AE9  1  18                   clc
+000AEA  1  60                   rts
+000AEB  1               
+000AEB  1               @exit_EOF:
+000AEB  1  C6 39                dec EOF_flag    ; Set EOF flag
+000AED  1  80 FA                bra @exit_OK
+000AEF  1               
+000AEF  1               ; sdcard_read_sector failed:
+000AEF  1               @exit_err:
+000AEF  1  38                   sec
+000AF0  1  60                   rts
+000AF1  1               
+000AF1  1               
+000AF1  1               ;-----------------------------------------------------------
+000AF1  1               ; ReadSector_MACPTR
+000AF1  1               ;       Read a sector into read_sector_buf from the open file
+000AF1  1               ;       using MACPTR (bulk read)
+000AF1  1               ;
+000AF1  1               ; On Entry: SECTOR_FILE_LFN is open for read
+000AF1  1               ;
+000AF1  1               ; On Exit:  C=0 - Sector was read successfully
+000AF1  1               ;           EOF_flag = $FF if EOF was detected (this is NOT an error)
+000AF1  1               ;           bytes_read = number of bytes read
+000AF1  1               ;
+000AF1  1               ;           C=1 - Sector read failed
+000AF1  1               ;           A-reg has READST code if fail
+000AF1  1               ;;          bytes_read = number of bytes read
+000AF1  1               ;
+000AF1  1               ; Uses: (zp) bytes_read, read_sector_buf
+000AF1  1               ;
+000AF1  1               ; Note: this code assumes that SECTOR_SIZE is 512
+000AF1  1               ;-----------------------------------------------------------
+000AF1  1               ReadSector_MACPTR:
+000AF1  1               
+000AF1  1  64 3A                stz bytes_read
+000AF3  1  64 3B                stz bytes_read+1
+000AF5  1               
+000AF5  1  A2 06                ldx #SECTOR_FILE_LFN
+000AF7  1  20 C6 FF             jsr CHKIN
+000AFA  1  20 B7 FF             jsr READST              ; READST
+000AFD  1  C9 00                cmp #0                  ; Error?
+000AFF  1  D0 20                bne @exit_err           ; Taken if error (A-reg has READST return)
+000B01  1               
+000B01  1               
+000B01  1               ; Use MACPTR to read 512 bytes:
+000B01  1  A2 20                ldx #<read_sector_buf
+000B03  1  A0 1A                ldy #>read_sector_buf
+000B05  1  A9 00                lda #0                  ; Read up to 512 bytes
+000B07  1  18                   clc                     ; We want destination address incremented
+000B08  1  20 44 FF             jsr MACPTR              ; Read UP TO 512 bytes...
+000B0B  1  B0 14                bcs @exit_err           ; Not supported
+000B0D  1               
+000B0D  1               ; X,Y contain the number of bytes read:
+000B0D  1  86 3A                stx bytes_read
+000B0F  1  84 3B                sty bytes_read+1
+000B11  1               
+000B11  1               ; Are we at EOF?
+000B11  1               
+000B11  1  20 B7 FF             jsr READST              ; READST
+000B14  1  29 40                and #READST_EOF         ; EOF?
+000B16  1  D0 05                bne @exit_EOF           ; Taken if so...
+000B18  1               
+000B18  1               ; Success exit:
+000B18  1               @exit_OK:
+000B18  1  20 CC FF             jsr CLRCHN
+000B1B  1  18                   clc
+000B1C  1  60                   rts
+000B1D  1               
+000B1D  1               @exit_EOF:
+000B1D  1  C6 39                dec EOF_flag    ; Set EOF flag
+000B1F  1  80 F7                bra @exit_OK
+000B21  1               
+000B21  1               ; CHKIN error, a-reg has READST code:
+000B21  1               @exit_err:
+000B21  1  48                   pha
+000B22  1  20 CC FF             jsr CLRCHN
+000B25  1  68                   pla
+000B26  1  38                   sec
+000B27  1  60                   rts
+000B28  1               
+000B28  1               ;-----------------------------------------------------------
+000B28  1               ; ReadSector_CHRIN
+000B28  1               ;       Read a sector into read_sector_buf from the open file
+000B28  1               ;       using CHRIN (character at a time)
+000B28  1               ;
+000B28  1               ; On Entry: SECTOR_FILE_LFN is open for read
+000B28  1               ;
+000B28  1               ; On Exit:  C=0 - Sector was read successfully
+000B28  1               ;           EOF_flag = $FF if EOF was detected (this is NOT an error)
+000B28  1               ;           bytes_read = number of bytes read
+000B28  1               ;
+000B28  1               ;           C=1 - Sector read failed
+000B28  1               ;           A-reg has READST code if fail
+000B28  1               ;;          bytes_read = number of bytes read
+000B28  1               ;
+000B28  1               ; Uses: (zp) bytes_read, read_sector_buf
+000B28  1               ;
+000B28  1               ; Note: this code assumes that SECTOR_SIZE is 512
+000B28  1               ;-----------------------------------------------------------
+000B28  1               ReadSector_CHRIN:
+000B28  1               
+000B28  1  64 3A                stz bytes_read
+000B2A  1  64 3B                stz bytes_read+1
+000B2C  1               
+000B2C  1  A2 06                ldx #SECTOR_FILE_LFN
+000B2E  1  20 C6 FF             jsr CHKIN
+000B31  1  20 B7 FF             jsr READST              ; READST
+000B34  1  C9 00                cmp #0                  ; Error?
+000B36  1  D0 39                bne @exit_err           ; Taken if error (A-reg has READST return)
+000B38  1               
+000B38  1               ; Read the sector in two chunks:
+000B38  1               
+000B38  1  A0 00               ldy #0                  ; Index
+000B3A  1               @next0:
+000B3A  1  E6 3A                inc bytes_read
+000B3C  1  D0 02                bne @skip0
+000B3E  1  E6 3B                inc bytes_read+1
+000B40  1               @skip0:
+000B40  1  20 CF FF             jsr CHRIN               ; y reg preserved
+000B43  1  99 20 1A             sta read_sector_buf,y   ; Save the byte in the low half of the sector buffer
+000B46  1  20 B7 FF             jsr READST              ; READST
+000B49  1  29 40                and #READST_EOF         ; EOF?
+000B4B  1  D0 20                bne @exit_EOF           ; Taken if so...
+000B4D  1  C8                   iny
+000B4E  1  D0 EA                bne @next0
+000B50  1               
+000B50  1               
+000B50  1  A0 00               ldy #0                        ; Index
+000B52  1               @next1:
+000B52  1  E6 3A                inc bytes_read
+000B54  1  D0 02                bne @skip1
+000B56  1  E6 3B                inc bytes_read+1
+000B58  1               @skip1:
+000B58  1  20 CF FF             jsr CHRIN                    ; y reg preserved
+000B5B  1  99 20 1B             sta read_sector_buf+$100,y   ; Save the byte in the high half of the sector buffer
+000B5E  1  20 B7 FF             jsr READST              ; READST
+000B61  1  29 40                and #READST_EOF         ; EOF?
+000B63  1  D0 08                bne @exit_EOF           ; Taken if so...
+000B65  1               
+000B65  1  C8                   iny
+000B66  1  D0 EA                bne @next1
+000B68  1               
+000B68  1               ; Success exit:
+000B68  1               @exit_OK:
+000B68  1  20 CC FF             jsr CLRCHN
+000B6B  1  18                   clc
+000B6C  1  60                   rts
+000B6D  1               
+000B6D  1               @exit_EOF:
+000B6D  1  C6 39                dec EOF_flag    ; Set EOF flag
+000B6F  1  80 F7                bra @exit_OK
+000B71  1               
+000B71  1               ; CHKIN error, a-reg has READST code:
+000B71  1               @exit_err:
+000B71  1  48                   pha
+000B72  1  20 CC FF             jsr CLRCHN
+000B75  1  68                   pla
+000B76  1  38                   sec
+000B77  1  60                   rts
+000B78  1               
+000B78  1               
+000B78  1               
+000B78  1               ;-----------------------------------------------------------
+000B78  1               ; Get_sector_buffer_addr - Looks in the KERNAL ROM to determine
+000B78  1               ;                          the address of sector_buffer
+000B78  1               ;
+000B78  1               ; On Entry: n/a
+000B78  1               ; On Exit:  C=0 - sector_buffer_ptr contains the sector_buffer address
+000B78  1               ;           C=1 - Unable to obtain the address
+000B78  1               ; Notes:
+000B78  1               ;  * Assumes some version of KERNAL r49
+000B78  1               ;  * Assumes that the function clear_buffer is at the location
+000B78  1               ;    location CLEAR_BUFFER_ADDR
+000B78  1               ;  * Locates an instruction in clear_buffer that accesses
+000B78  1               ;    sector_buffer and uses that to set the pointer
+000B78  1               ;    to sector_buffer
+000B78  1               ;  * Does some checking to make sure we are getting the
+000B78  1               ;    correct address
+000B78  1               ;-----------------------------------------------------------
+000B78  1               Get_sector_buffer_addr:
+000B78  1               
+000B78  1  A5 01                lda ROM_BANK_REG
+000B7A  1  85 2E                sta scratch0
+000B7C  1               
+000B7C  1  A9 03                lda #3
+000B7E  1  85 01                sta ROM_BANK_REG
+000B80  1               
+000B80  1  AD C1 C5             lda CLEAR_BUFFER_ADDR
+000B83  1  C9 A0                cmp #$A0                ; LDY #<imm> instruction
+000B85  1  D0 25                bne @exit_err           ; ROM not as expected
+000B87  1  AD C2 C5             lda CLEAR_BUFFER_ADDR+1
+000B8A  1  C9 00                cmp #$00                ; $0 parameter
+000B8C  1  D0 1E                bne @exit_err           ; ROM not as expected
+000B8E  1  AD C3 C5             lda CLEAR_BUFFER_ADDR+2
+000B91  1  C9 98                cmp #$98                ;TYA instruction
+000B93  1  D0 17                bne @exit_err           ; ROM not as expected
+000B95  1  AD C4 C5             lda CLEAR_BUFFER_ADDR+3
+000B98  1  C9 99                cmp #$99                ; STA <abs>,y instruction
+000B9A  1  D0 10                bne @exit_err           ; ROM not as expected
+000B9C  1               
+000B9C  1               ; The operand of the STA at CLEAR_BUFFER_ADDR+3 is the address of sector_buffer:
+000B9C  1  AD C5 C5             lda CLEAR_BUFFER_ADDR+4           ; sector_BUFFER LSB
+000B9F  1  85 4A                sta sector_buffer_ptr
+000BA1  1  AD C6 C5             lda CLEAR_BUFFER_ADDR+5           ; sector_BUFFER MSB
+000BA4  1  85 4B                sta sector_buffer_ptr+1
+000BA6  1               
+000BA6  1               @exit_OK:
+000BA6  1  A5 2E                lda scratch0
+000BA8  1  85 01                sta ROM_BANK_REG
+000BAA  1  18                   clc
+000BAB  1  60                   rts
+000BAC  1               
+000BAC  1               @exit_err:
+000BAC  1  A5 2E                lda scratch0
+000BAE  1  85 01                sta ROM_BANK_REG
+000BB0  1               
+000BB0  1  A9 28                lda #<Get_sector_buffer_addr_fail
+000BB2  1  A2 16                ldx #>Get_sector_buffer_addr_fail
+000BB4  1  20 EE 10             jsr StrOut
+000BB7  1               
+000BB7  1  38                   sec
+000BB8  1  60                   rts
+000BB9  1               
+000BB9  1               ;-----------------------------------------------------------
+000BB9  1               ; Get_sector_LBA_addr - Looks in the KERNAL ROM to determine
+000BB9  1               ;                       the address of sector_LBA
+000BB9  1               ;
+000BB9  1               ; On Entry: n/a
+000BB9  1               ; On Exit:  C=0 - sector_lba_ptr contains the sector_LBA address
+000BB9  1               ;           C=1 - Unable to obtain the address
+000BB9  1               ; Notes:
+000BB9  1               ;  * Assumes some version of KERNAL r49
+000BB9  1               ;  * Assumes that the function sdcard_read_sector is at the
+000BB9  1               ;    location SDCARD_CHECK_ALIVE_ADDR
+000BB9  1               ;  * Locates an instruction in sdcard_check_alive_addr that
+000BB9  1               ;    access sector_LBA and uses that to set the pointer
+000BB9  1               ;    to sector_LBA
+000BB9  1               ;  * Does some checking to make sure we are getting the
+000BB9  1               ;    correct address
+000BB9  1               ;-----------------------------------------------------------
+000BB9  1               Get_sector_LBA_addr:
+000BB9  1               
+000BB9  1  A5 01                lda ROM_BANK_REG
+000BBB  1  85 2E                sta scratch0
+000BBD  1               
+000BBD  1  A9 03                lda #3
+000BBF  1  85 01                sta ROM_BANK_REG
+000BC1  1               
+000BC1  1  AD 2E E7             lda SDCARD_CHECK_ALIVE_ADDR
+000BC4  1  C9 A2                cmp #$A2                ; LDX #<imm> instruction
+000BC6  1  D0 1E                bne @exit_err           ; ROM not as expected
+000BC8  1  AD 2F E7             lda SDCARD_CHECK_ALIVE_ADDR+1
+000BCB  1  C9 00                cmp #$00                ; $0 parameter
+000BCD  1  D0 17                bne @exit_err           ; ROM not as expected
+000BCF  1  AD 30 E7             lda SDCARD_CHECK_ALIVE_ADDR+2
+000BD2  1  C9 BD                cmp #$BD                ; LDA <abs>,x instruction
+000BD4  1  D0 10                bne @exit_err           ; ROM not as expected
+000BD6  1               
+000BD6  1               ; The operand of the LDA at SDCARD_CHECK_ALIVE_ADDR+2 is the address of sector_LBA:
+000BD6  1  AD 31 E7             lda SDCARD_CHECK_ALIVE_ADDR+3           ; sector_LBA LSB
+000BD9  1  85 48                sta sector_lba_ptr
+000BDB  1  AD 32 E7             lda SDCARD_CHECK_ALIVE_ADDR+4           ; sector_LBA MSB
+000BDE  1  85 49                sta sector_lba_ptr+1
+000BE0  1               
+000BE0  1               @exit_OK:
+000BE0  1  A5 2E                lda scratch0
+000BE2  1  85 01                sta ROM_BANK_REG
+000BE4  1  18                   clc
+000BE5  1  60                   rts
+000BE6  1               
+000BE6  1               @exit_err:
+000BE6  1  A5 2E                lda scratch0
+000BE8  1  85 01                sta ROM_BANK_REG
+000BEA  1               
+000BEA  1  A9 57                lda #<Get_sector_LBA_addr_fail
+000BEC  1  A2 16                ldx #>Get_sector_LBA_addr_fail
+000BEE  1  20 EE 10             jsr StrOut
+000BF1  1               
+000BF1  1  38                   sec
+000BF2  1  60                   rts
+000BF3  1               
+000BF3  1               ;-----------------------------------------------------------------
+000BF3  1               ; GetFileSize - Get the file size and sector count of the open
+000BF3  1               ;               SECTOR_FILE_LFN
+000BF3  1               ;
+000BF3  1               ; On Entry: SECTOR_FILE_LFN is open for read
+000BF3  1               ; On Exit:  C=0 - data_file_size = file size in bytes (4 bytes/8 hex digits)
+000BF3  1               ;                 data_file_sectors = file size in sectors (2 bytes/4 hex digits)
+000BF3  1               ;                 data_file_last_sector = last sector in a data_file_sectors file
+000BF3  1               ;           C=1 - File open failed (e.g. file doesn't exist)
+000BF3  1               ;                 A-reg has READST code if open fail
+000BF3  1               ;-----------------------------------------------------------------
+000BF3  1               GetFileSize:
+000BF3  1               
+000BF3  1               ; Set up for the SETNAM call (the "filename" is the "T" command plus the open file's LFN)
+000BF3  1  A9 9C                lda #<tell_str     ; Get filename length
+000BF5  1  A2 0C                ldx #>tell_str
+000BF7  1  20 05 11             jsr StrLen         ; y-reg = length
+000BFA  1               
+000BFA  1               ; Set up for SETNAM is a bit different:
+000BFA  1  98                   tya                ; a-reg = fname length
+000BFB  1  A2 9C                ldx #<tell_str
+000BFD  1  A0 0C                ldy #>tell_str
+000BFF  1  20 BD FF             jsr SETNAM              ; SETNAM (no return value or flag)
+000C02  1               
+000C02  1  A9 0F                lda #15                 ; Command channel LFN
+000C04  1  A2 08                ldx #8                  ; Device number (always 8)
+000C06  1  A8                   tay                     ; Secondary is LFN
+000C07  1               
+000C07  1  20 BA FF             jsr SETLFS              ; SETLFS - A-logical file number, X-device (8), y secondary (no return value or flag)
+000C0A  1  20 C0 FF             jsr OPEN                ; OPEN (no params), C=1 on error
+000C0D  1  20 B7 FF             jsr READST              ; READST
+000C10  1  C9 00                cmp #0                  ; Error?
+000C12  1  F0 03                beq @read_cmd_chan      ; TAKEN if NOT
+000C14  1  4C 9A 0C             jmp @exit_err           ; Taken if error (A-reg has READST return)
+000C17  1               
+000C17  1               ; Now read the parameters from the command channel:
+000C17  1               @read_cmd_chan:
+000C17  1  A2 0F                ldx #15                 ; Command channel LFN
+000C19  1  20 C6 FF             jsr CHKIN               ; Destroys all regs, but it is OK
+000C1C  1               
+000C1C  1  A0 00                ldy #0
+000C1E  1               @get_cmd_char:
+000C1E  1  20 E4 FF             jsr GETIN
+000C21  1  99 D0 17             sta cmd_buf,y
+000C24  1  C8                   iny
+000C25  1  C9 0D                cmp #CR
+000C27  1  D0 F5                bne @get_cmd_char
+000C29  1               
+000C29  1  A9 00                lda #0                  ; NULL-terminate
+000C2B  1  99 D0 17             sta cmd_buf,y
+000C2E  1  A9 0F                lda #15
+000C30  1  20 C3 FF             jsr CLOSE
+000C33  1  20 CC FF             jsr CLRCHN
+000C36  1               
+000C36  1               ; Look for success code "07":
+000C36  1               
+000C36  1  A0 00                ldy #0
+000C38  1  B9 D0 17             lda cmd_buf,y
+000C3B  1  C9 30                cmp #'0'
+000C3D  1  D0 5B                bne @exit_err
+000C3F  1  C8                   iny
+000C40  1  B9 D0 17             lda cmd_buf,y
+000C43  1  C9 37                cmp #'7'
+000C45  1  D0 53                bne @exit_err
+000C47  1  C8                   iny                     ; Skip the comma.
+000C48  1  C8                   iny                     ; y now points at the first digit of the 8-hex FILE POSITION number:
+000C49  1               ; 07,00000000 00000600,00,00
+000C49  1               ;    ^ y-reg         ^ target
+000C49  1               ; Add 16 to the index to point at the last digit of the 8-digit FILE SIZE:
+000C49  1  98                   tya
+000C4A  1  18                   clc
+000C4B  1  69 10                adc #16
+000C4D  1  A8                   tay                     ; Y points to the END of the 8-digit FILE SIZE
+000C4E  1               ; 07,00000000 00000600,00,00
+000C4E  1               ;                    ^ y-reg
+000C4E  1               
+000C4E  1               ; Get the file size from the string and store in little-endian order:
+000C4E  1               
+000C4E  1  A2 00                ldx #0                  ; LBA byte index
+000C50  1               @next_byte:
+000C50  1  B9 D0 17             lda cmd_buf,y           ; Get LSB
+000C53  1  20 E0 10             jsr TextToHex           ; Magic!
+000C56  1  85 2E                sta scratch0            ; Save LSB
+000C58  1  B9 CF 17             lda cmd_buf-1,y         ; Get MSB
+000C5B  1  20 E0 10             jsr TextToHex           ; More magic!
+000C5E  1  0A                   asl
+000C5F  1  0A                   asl
+000C60  1  0A                   asl
+000C61  1  0A                   asl
+000C62  1  05 2E                ora scratch0            ; Splice in LSB
+000C64  1  95 50                sta data_file_size,x    ; Save byte
+000C66  1  88                   dey
+000C67  1  88                   dey
+000C68  1  E8                   inx
+000C69  1  E0 04                cpx #4
+000C6B  1  D0 E3                bne @next_byte
+000C6D  1               
+000C6D  1               ; Divide file size by 512 to get number of 512-byte sectors:
+000C6D  1               
+000C6D  1               ; Divide by 256 by shifting right 1 byte
+000C6D  1  A5 51                lda data_file_size+1
+000C6F  1  85 54                sta data_file_sectors
+000C71  1  A5 52                lda data_file_size+2
+000C73  1  85 55                sta data_file_sectors+1
+000C75  1  A5 53                lda data_file_size+3
+000C77  1  85 56                sta data_file_sectors+2
+000C79  1  64 57                stz data_file_sectors+3 ; The MSB is no longer valid.
+000C7B  1               
+000C7B  1               ; Divide by 2 by shifting right 1 bit. The result is a 3-byte value (we only use 2 bytes):
+000C7B  1  18                   clc
+000C7C  1  A5 56                lda data_file_sectors+2
+000C7E  1  6A                   ror
+000C7F  1  85 56                sta data_file_sectors+2
+000C81  1  A5 55                lda data_file_sectors+1
+000C83  1  6A                   ror
+000C84  1  85 55                sta data_file_sectors+1
+000C86  1  A5 54                lda data_file_sectors+0
+000C88  1  6A                   ror
+000C89  1  85 54                sta data_file_sectors+0
+000C8B  1               
+000C8B  1               ; Calculate the last sector in this file so we can set EOF:
+000C8B  1  38                   sec
+000C8C  1  A5 54                lda data_file_sectors+0
+000C8E  1  E9 01                sbc #1
+000C90  1  85 58                sta data_file_last_sector
+000C92  1  A5 55                lda data_file_sectors+1
+000C94  1  E9 00                sbc #0
+000C96  1  85 59                sta data_file_last_sector+1
+000C98  1               
+000C98  1               ; Success exit:
+000C98  1               @exit_OK:
+000C98  1               ; Debugging - prints the response to the TELL command:
+000C98  1               ;        lda #<cmd_buf
+000C98  1               ;        ldx #>cmd_buf
+000C98  1               ;        jsr StrOut
+000C98  1  18                   clc
+000C99  1  60                   rts
+000C9A  1               
+000C9A  1               ; OPEN error, a-reg has READST code:
+000C9A  1               @exit_err:
+000C9A  1  38                   sec
+000C9B  1  60                   rts
+000C9C  1               
+000C9C  1               ;--------------------------------------------------
+000C9C  1               ; Data for GetFileSize
+000C9C  1  54 06 00     tell_str: .byte "t", SECTOR_FILE_LFN,$00
+000C9F  1               ;--------------------------------------------------
+000C9F  1               
+000C9F  1               
+000C9F  1               ;-----------------------------------------------------------------
+000C9F  1               ; GetFirstLBA - Get the first sector of the open SECTOR_FILE_LFN
+000C9F  1               ;
+000C9F  1               ; On Entry: SECTOR_FILE_LFN is open for read
+000C9F  1               ; On Exit:  C=0 -
+000C9F  1               ;           C=1 - File open failed (e.g. file doesn't exist)
+000C9F  1               ;           A-reg has READST code if open fail
+000C9F  1               ;           or 0 if file doesn't exist
+000C9F  1               ;
+000C9F  1               ;-----------------------------------------------------------------
+000C9F  1               GetFirstLBA:
+000C9F  1               
+000C9F  1               ; Set up for the SETNAM call (the "filename" is the "LB" command plus the open file's LFN)
+000C9F  1  A9 1A                lda #<fatlba_str     ; Get filename length
+000CA1  1  A2 0D                ldx #>fatlba_str
+000CA3  1  20 05 11             jsr StrLen         ; y-reg = length
+000CA6  1               
+000CA6  1               ; Set up for SETNAM is a bit different:
+000CA6  1  98                   tya                ; a-reg = fname length
+000CA7  1  A2 1A                ldx #<fatlba_str
+000CA9  1  A0 0D                ldy #>fatlba_str
+000CAB  1  20 BD FF             jsr SETNAM              ; SETNAM (no return value or flag)
+000CAE  1               
+000CAE  1  A9 0F                lda #15                 ; Command channel LFN
+000CB0  1  A2 08                ldx #8                  ; Device number (always 8)
+000CB2  1  A8                   tay                     ; Secondary is LFN
+000CB3  1               
+000CB3  1  20 BA FF             jsr SETLFS              ; SETLFS - A-logical file number, X-device (8), y secondary (no return value or flag)
+000CB6  1  20 C0 FF             jsr OPEN                ; OPEN (no params), C=1 on error
+000CB9  1  20 B7 FF             jsr READST              ; READST
+000CBC  1  C9 00                cmp #0                  ; Error?
+000CBE  1  D0 58                bne @exit_err           ; Taken if error (A-reg has READST return)
+000CC0  1               
+000CC0  1               ; Now read the parameters from the command channel:
+000CC0  1               
+000CC0  1  A2 0F                ldx #15                 ; Command channel LFN
+000CC2  1  20 C6 FF             jsr CHKIN               ; Destroys all regs, but it is OK
+000CC5  1               
+000CC5  1  A0 00                ldy #0
+000CC7  1               @get_cmd_char:
+000CC7  1  20 E4 FF             jsr GETIN
+000CCA  1  99 D0 17             sta cmd_buf,y
+000CCD  1  C8                   iny
+000CCE  1  C9 0D                cmp #CR
+000CD0  1  D0 F5                bne @get_cmd_char
+000CD2  1               
+000CD2  1  A9 00                lda #0                  ; NULL-terminate
+000CD4  1  99 D0 17             sta cmd_buf,y
+000CD7  1  A9 0F                lda #15
+000CD9  1  20 C3 FF             jsr CLOSE
+000CDC  1  20 CC FF             jsr CLRCHN
+000CDF  1               
+000CDF  1               ; Look for success code "07":
+000CDF  1               
+000CDF  1  A0 00                ldy #0
+000CE1  1  B9 D0 17             lda cmd_buf,y
+000CE4  1  C9 30                cmp #'0'
+000CE6  1  D0 30                bne @exit_err
+000CE8  1  C8                   iny
+000CE9  1  B9 D0 17             lda cmd_buf,y
+000CEC  1  C9 37                cmp #'7'
+000CEE  1  D0 28                bne @exit_err
+000CF0  1  C8                   iny                     ; Skip the comma.
+000CF1  1  C8                   iny                     ; y now points at the first digit of the 8-hex digit number
+000CF2  1               
+000CF2  1               ; Get the LBA from the string and store in little-endian order:
+000CF2  1               
+000CF2  1  98                   tya
+000CF3  1  18                   clc
+000CF4  1  69 07                adc #7
+000CF6  1  A8                   tay                     ; Y points to the END of the 8-digit LBA
+000CF7  1               
+000CF7  1  A2 00                ldx #0                  ; LBA byte index
+000CF9  1               @next_byte:
+000CF9  1  B9 D0 17             lda cmd_buf,y           ; Get LSB
+000CFC  1  20 E0 10             jsr TextToHex           ; Magic!
+000CFF  1  85 2E                sta scratch0            ; Save LSB
+000D01  1  B9 CF 17             lda cmd_buf-1,y         ; Get MSB
+000D04  1  20 E0 10             jsr TextToHex           ; More magic!
+000D07  1  0A                   asl a
+000D08  1  0A                   asl a
+000D09  1  0A                   asl a
+000D0A  1  0A                   asl a
+000D0B  1  05 2E                ora scratch0            ; Splice in LSB
+000D0D  1  95 4C                sta cur_lba,x           ; Save byte
+000D0F  1  88                   dey
+000D10  1  88                   dey
+000D11  1  E8                   inx
+000D12  1  E0 04                cpx #4
+000D14  1  D0 E3                bne @next_byte
+000D16  1               
+000D16  1               ; Success exit:
+000D16  1               @exit_OK:
+000D16  1               ; Debugging - prints the response to the FATLBA command:
+000D16  1               ;        lda #<cmd_buf
+000D16  1               ;        ldx #>cmd_buf
+000D16  1               ;        jsr StrOut
+000D16  1  18                   clc
+000D17  1  60                   rts
+000D18  1               
+000D18  1               ; OPEN error, a-reg has READST code:
+000D18  1               @exit_err:
+000D18  1  38                   sec
+000D19  1  60                   rts
+000D1A  1               
+000D1A  1               ;--------------------------------------------------
+000D1A  1               ; Data for GetFirstLBA
+000D1A  1  46 4C 06 00  fatlba_str: .byte "fl", SECTOR_FILE_LFN,$00
+000D1E  1               ;--------------------------------------------------
+000D1E  1               
+000D1E  1               ;-------------------------------------------------------------
+000D1E  1               ; CloseFileRead - Close the file
+000D1E  1               ;
+000D1E  1               ; On Entry: n/a
+000D1E  1               ; On Exit:  n/a
+000D1E  1               ;
+000D1E  1               ; Note: we could call READST to get the status, but we don't.
+000D1E  1               ;-------------------------------------------------------------
+000D1E  1               
+000D1E  1               CloseFileRead:
+000D1E  1               
+000D1E  1  A9 06                lda #SECTOR_FILE_LFN  ; Close the sector file
+000D20  1  20 C3 FF             jsr CLOSE
+000D23  1  60                   rts
+000D24  1               
+000D24  1               ;-----------------------------------------------------------
+000D24  1               ; OpenFileRead - Open the file for read
+000D24  1               ;
+000D24  1               ; On Entry: n/a
+000D24  1               ; On Exit:  C=0 - File is open for read
+000D24  1               ;           C=1 - File open failed (e.g. file doesn't exist)
+000D24  1               ;           A-reg has READST code if open fail
+000D24  1               ;           or 0 if file doesn't exist
+000D24  1               ;
+000D24  1               ;-----------------------------------------------------------
+000D24  1               OpenFileRead:
+000D24  1               
+000D24  1               ; Set up for filename StrLen:
+000D24  1  A9 30                lda #<fname_buf      ; Get filename length
+000D26  1  A2 17                ldx #>fname_buf
+000D28  1  20 05 11             jsr StrLen         ; y-reg = length
+000D2B  1               
+000D2B  1               ; Set up for FileExists is a bit different:
+000D2B  1  98                   tya                ; a-reg = fname length
+000D2C  1  A2 30                ldx #<fname_buf
+000D2E  1  A0 17                ldy #>fname_buf
+000D30  1               
+000D30  1               ;   On Exit:  C = 0 - File exists
+000D30  1               ;                 1 - File does NOT exist
+000D30  1  20 48 12             jsr FileExists
+000D33  1  90 1A                bcc @open_file    ; Taken if it exists
+000D35  1               
+000D35  1               ; File does NOT exist, so issue error message and exit:
+000D35  1               
+000D35  1  A9 F1                lda #<nofile_msg
+000D37  1  A2 14                ldx #>nofile_msg
+000D39  1  20 EE 10             jsr StrOut
+000D3C  1  A9 30                lda #<fname_buf
+000D3E  1  A2 17                ldx #>fname_buf
+000D40  1  20 EE 10             jsr StrOut
+000D43  1  A9 0D                lda #CR
+000D45  1  20 D2 FF             jsr CHROUT
+000D48  1  A9 0D                lda #CR
+000D4A  1  20 D2 FF             jsr CHROUT
+000D4D  1  80 23                bra @exit_nofile
+000D4F  1               
+000D4F  1               @open_file:
+000D4F  1               
+000D4F  1               ; Set up for the SETNAM call:
+000D4F  1               
+000D4F  1  A9 30                lda #<fname_buf      ; Get filename length
+000D51  1  A2 17                ldx #>fname_buf
+000D53  1  20 05 11             jsr StrLen         ; y-reg = length
+000D56  1               
+000D56  1               ; Set up for SETNAM is a bit different:
+000D56  1  98                   tya                ; a-reg = fname length
+000D57  1  A2 30                ldx #<fname_buf
+000D59  1  A0 17                ldy #>fname_buf
+000D5B  1  20 BD FF             jsr SETNAM           ; SETNAM (no return value or flag)
+000D5E  1               
+000D5E  1  A9 06                lda #SECTOR_FILE_LFN    ; Logical file number
+000D60  1  A2 08                ldx #8                  ; Device number (always 8)
+000D62  1  A8                   tay                     ; Secondary is LFN
+000D63  1               
+000D63  1  20 BA FF             jsr SETLFS              ; SETLFS - A-logical file number, X-device (8), y secondary (no return value or flag)
+000D66  1  20 C0 FF             jsr OPEN                ; OPEN (no params), C=1 on error
+000D69  1  20 B7 FF             jsr READST              ; READST
+000D6C  1  C9 00                cmp #0                  ; Error?
+000D6E  1  D0 06                bne @exit_err           ; Taken if error (A-reg has READST return)
+000D70  1               
+000D70  1               ; Success exit:
+000D70  1               @exit_OK:
+000D70  1  18                   clc
+000D71  1  60                   rts
+000D72  1               
+000D72  1               ; File not found:
+000D72  1               @exit_nofile:
+000D72  1  A9 00                lda #0
+000D74  1  38                   sec
+000D75  1  60                   rts
+000D76  1               
+000D76  1               ; OPEN error, a-reg has READST code:
+000D76  1               @exit_err:
+000D76  1  38                   sec
+000D77  1  60                   rts
+000D78  1               
+000D78  1               ;-----------------------------------------------------------
+000D78  1               ; ShowReadMethod - Show the selected read method string.
+000D78  1               ;
+000D78  1               ;
+000D78  1               ; On Entry: read_method_flag set to one of the methods
+000D78  1               ; On Exit:  n/a
+000D78  1               ;
+000D78  1               ; Note: called by ReviewReadParams and OpenLogFile
+000D78  1               ;-----------------------------------------------------------
+000D78  1               ShowReadMethod:
+000D78  1               
+000D78  1               ; Select the read method display text:
+000D78  1  A5 38                lda read_method_flag
+000D7A  1  29 01                and #CHRIN_flag
+000D7C  1  D0 12                bne @method_chrin
+000D7E  1  A5 38                lda read_method_flag
+000D80  1  29 80                and #MACPTR_flag
+000D82  1  D0 06                bne @method_MACPTR
+000D84  1               
+000D84  1               @method_SDCARD:
+000D84  1  A9 AC                lda #<ReadMethod_SDCARD
+000D86  1  A2 14                ldx #>ReadMethod_SDCARD
+000D88  1  80 0A                bra @common
+000D8A  1               
+000D8A  1               @method_MACPTR:
+000D8A  1  A9 A5                lda #<ReadMethod_MACPTR
+000D8C  1  A2 14                ldx #>ReadMethod_MACPTR
+000D8E  1  80 04                bra @common
+000D90  1               
+000D90  1               @method_chrin:
+000D90  1  A9 9F                lda #<ReadMethod_CHRIN
+000D92  1  A2 14                ldx #>ReadMethod_CHRIN
+000D94  1               
+000D94  1               @common:
+000D94  1  20 EE 10             jsr StrOut
+000D97  1  A9 0D                lda #CR
+000D99  1  20 D2 FF             jsr CHROUT
+000D9C  1               
+000D9C  1  60                   rts
+000D9D  1               
+000D9D  1               ;-----------------------------------------------------------
+000D9D  1               ; ReviewReadParams - Confirm read parameters
+000D9D  1               ;
+000D9D  1               ; On Entry: n/a
+000D9D  1               ; On Exit:  C=0 - read params confirmed
+000D9D  1               ;           C=1 - ESC was entered, exit request
+000D9D  1               ;-----------------------------------------------------------
+000D9D  1               ReviewReadParams:
+000D9D  1               
+000D9D  1  A9 6D                lda #<ReadMethod_review
+000D9F  1  A2 14                ldx #>ReadMethod_review
+000DA1  1  20 EE 10             jsr StrOut
+000DA4  1               
+000DA4  1  20 78 0D             jsr ShowReadMethod
+000DA7  1               
+000DA7  1               ; Confirm data file name:
+000DA7  1  A9 7F                lda #<FileName_review2
+000DA9  1  A2 14                ldx #>FileName_review2
+000DAB  1  20 EE 10             jsr StrOut
+000DAE  1               
+000DAE  1  A9 30                lda #<fname_buf   ; Show the data file name
+000DB0  1  A2 17                ldx #>fname_buf
+000DB2  1  20 EE 10             jsr StrOut
+000DB5  1  A9 0D                lda #CR
+000DB7  1  20 D2 FF             jsr CHROUT
+000DBA  1               
+000DBA  1               ;  Confirm log file name:
+000DBA  1               
+000DBA  1  A9 8F                lda #<LogFileName_review
+000DBC  1  A2 14                ldx #>LogFileName_review
+000DBE  1  20 EE 10             jsr StrOut
+000DC1  1               
+000DC1  1  A9 80                lda #<log_fname_buf   ; Show the long file name
+000DC3  1  A2 17                ldx #>log_fname_buf
+000DC5  1  20 EE 10             jsr StrOut
+000DC8  1  A9 0D                lda #CR
+000DCA  1  20 D2 FF             jsr CHROUT
+000DCD  1  A9 0D                lda #CR
+000DCF  1  20 D2 FF             jsr CHROUT
+000DD2  1               
+000DD2  1               ; Confirm run params with user:
+000DD2  1               
+000DD2  1  A9 4E                lda #<YN_prompt ; Confirm with user...
+000DD4  1  A2 14                ldx #>YN_prompt
+000DD6  1  20 EE 10             jsr StrOut
+000DD9  1  20 1A 10             jsr GetYN
+000DDC  1               
+000DDC  1               ; Give a little space...
+000DDC  1  08                   php
+000DDD  1  48                   pha
+000DDE  1  A9 0D                lda #CR
+000DE0  1  20 D2 FF             jsr CHROUT
+000DE3  1               ;        lda #CR
+000DE3  1               ;        jsr CHROUT
+000DE3  1  68                   pla
+000DE4  1  28                   plp
+000DE5  1               
+000DE5  1  B0 10                bcs @exit_esc      ; Taken if ESC pressed
+000DE7  1  C9 4E                cmp #PETSCII_N     ; Rejected?
+000DE9  1  F0 0C                beq @exit_esc      ; Taken if so
+000DEB  1               
+000DEB  1  A9 0D                lda #CR
+000DED  1  20 D2 FF             jsr CHROUT
+000DF0  1  A9 0D                lda #CR
+000DF2  1  20 D2 FF             jsr CHROUT
+000DF5  1               
+000DF5  1               @exit_OK:
+000DF5  1  18                   clc
+000DF6  1  60                   rts
+000DF7  1               
+000DF7  1               ; For ESC or "no" entered:
+000DF7  1               @exit_esc:
+000DF7  1  38                   sec
+000DF8  1  60                   rts
+000DF9  1               
+000DF9  1               ;-----------------------------------------------------------
+000DF9  1               ; GetReadParams - Prompt for read parameters
+000DF9  1               ;
+000DF9  1               ; On Entry: n/a
+000DF9  1               ; On Exit:  C=0 - read params are set
+000DF9  1               ;           C=1 - ESC was entered, exit request
+000DF9  1               ;-----------------------------------------------------------
+000DF9  1               GetReadParams:
+000DF9  1               
+000DF9  1  A9 01                lda #CHRIN_flag
+000DFB  1  85 38                sta read_method_flag    ; Set to CHRIN
+000DFD  1               
+000DFD  1  A9 DA                lda #<ReadMethod_prompt
+000DFF  1  A2 13                ldx #>ReadMethod_prompt
+000E01  1  20 EE 10             jsr StrOut
+000E04  1  A9 90                lda #<kbd_buf
+000E06  1  A2 16                ldx #>kbd_buf
+000E08  1  20 6B 10             jsr GetLineInput
+000E0B  1  08                   php
+000E0C  1  A9 0D                lda #CR
+000E0E  1  20 D2 FF             jsr CHROUT
+000E11  1  28                   plp
+000E12  1  90 03                bcc @not_esc         ; Taken if no ESC
+000E14  1  4C A1 0E             jmp @exit_esc        ; Taken if ESC pressed
+000E17  1               
+000E17  1               @not_esc:
+000E17  1  C0 00                cpy #0               ; RETURN entered?
+000E19  1  F0 1B                beq @set_macptr      ; Taken if so
+000E1B  1  C0 01                cpy #1               ; Just one character entered?
+000E1D  1  D0 DA                bne GetReadParams    ; Taken if not (try again)
+000E1F  1               
+000E1F  1               ; Determine the read method selected (CHRIN is already set)
+000E1F  1  AD 90 16             lda kbd_buf
+000E22  1  29 5F                and #$5F             ; Shift UPPER characters to PETSCII
+000E24  1  C9 43                cmp #PETSCII_C       ; CHRIN?
+000E26  1  F0 12                beq @get_fname       ; Taken if so (CHRIN is already set)
+000E28  1  C9 4D                cmp  #PETSCII_M      ; MACPTR?
+000E2A  1  F0 0A                beq @set_macptr      ; Taken if so
+000E2C  1  C9 5E                cmp #PETSCII_S       ; SDCARD?
+000E2E  1  F0 C9                beq GetReadParams    ; Taken if NOT (error, so try again)
+000E30  1               
+000E30  1               @set_sdcard:
+000E30  1  A9 40                lda #SDCARD_flag
+000E32  1  85 38                sta read_method_flag ; Set to SDCARD
+000E34  1  80 04                bra @get_fname
+000E36  1               
+000E36  1               @set_macptr:
+000E36  1  A9 80                lda #MACPTR_flag
+000E38  1  85 38                sta read_method_flag ; Set to MACPTR
+000E3A  1               
+000E3A  1               ; Get the data file name:
+000E3A  1               @get_fname:
+000E3A  1  A9 0D                lda #CR
+000E3C  1  20 D2 FF             jsr CHROUT
+000E3F  1               
+000E3F  1  A9 16                lda #<FileName_prompt
+000E41  1  A2 14                ldx #>FileName_prompt
+000E43  1  20 EE 10             jsr StrOut
+000E46  1  A9 30                lda #<fname_buf
+000E48  1  A2 17                ldx #>fname_buf
+000E4A  1  20 6B 10             jsr GetLineInput
+000E4D  1  B0 52                bcs @exit_esc        ; ESC pressed...
+000E4F  1               
+000E4F  1  C0 00                cpy #0               ; Just RETURN entered (default)?
+000E51  1  D0 1C                bne @get_log_fname   ; Taken if NOT
+000E53  1               
+000E53  1               ; Enter the default value for fname:
+000E53  1  A9 06                lda #<DEFAULT_FNAME
+000E55  1  85 24                sta MemPtr
+000E57  1  A9 14                lda #>DEFAULT_FNAME
+000E59  1  85 25                sta MemPtr+1
+000E5B  1               
+000E5B  1  A0 00                ldy #0
+000E5D  1               @fname_copy:
+000E5D  1  B1 24                lda (MemPtr),y
+000E5F  1  F0 06                beq @cont0
+000E61  1  99 30 17             sta fname_buf,y
+000E64  1  C8                   iny
+000E65  1  80 F6                bra @fname_copy
+000E67  1               
+000E67  1               @cont0:
+000E67  1  99 30 17             sta fname_buf,y        ; Null-terminate the string (a-reg has null)
+000E6A  1               
+000E6A  1  A9 0D                lda #CR
+000E6C  1  20 D2 FF             jsr CHROUT
+000E6F  1               
+000E6F  1               ; Get the log file name:
+000E6F  1               @get_log_fname:
+000E6F  1  A9 32                lda #<LogFileName_prompt
+000E71  1  A2 14                ldx #>LogFileName_prompt
+000E73  1  20 EE 10             jsr StrOut
+000E76  1  A9 80                lda #<log_fname_buf
+000E78  1  A2 17                ldx #>log_fname_buf
+000E7A  1  20 6B 10             jsr GetLineInput
+000E7D  1  B0 22                bcs @exit_esc        ; ESC pressed...
+000E7F  1               
+000E7F  1  C0 00                cpy #0               ; Just RETURN entered (default)?
+000E81  1  D0 1C                bne @exit            ; Taken if NOT
+000E83  1               
+000E83  1               ; Enter the default value for log_fname:
+000E83  1  A9 0E                lda #<DEFAULT_LOG_FNAME
+000E85  1  85 24                sta MemPtr
+000E87  1  A9 14                lda #>DEFAULT_LOG_FNAME
+000E89  1  85 25                sta MemPtr+1
+000E8B  1               
+000E8B  1  A0 00                ldy #0
+000E8D  1               @log_fname_copy:
+000E8D  1  B1 24                lda (MemPtr),y
+000E8F  1  F0 06                beq @cont1
+000E91  1  99 80 17             sta log_fname_buf,y
+000E94  1  C8                   iny
+000E95  1  80 F6                bra @log_fname_copy
+000E97  1               
+000E97  1               @cont1:
+000E97  1  99 80 17             sta log_fname_buf,y        ; Null-terminate the string (a-reg has null)
+000E9A  1               
+000E9A  1  A9 0D                lda #CR
+000E9C  1  20 D2 FF             jsr CHROUT
+000E9F  1               
+000E9F  1               @exit:
+000E9F  1  18                   clc
+000EA0  1  60                   rts
+000EA1  1               
+000EA1  1               @exit_esc:
+000EA1  1  38                   sec
+000EA2  1  60                   rts
+000EA3  1               
+000EA3  1               ;-------------------------------------------------------------
+000EA3  1               ; CloseLogFile - Close the file
+000EA3  1               ;
+000EA3  1               ; On Entry: n/a
+000EA3  1               ; On Exit:  n/a
+000EA3  1               ;
+000EA3  1               ; Note: we could call READST to get the status, but we don't.
+000EA3  1               ;-------------------------------------------------------------
+000EA3  1               
+000EA3  1               CloseLogFile:
+000EA3  1               
+000EA3  1  A9 07                lda #LOG_FILE_LFN  ; Close the log file
+000EA5  1  20 C3 FF             jsr CLOSE
+000EA8  1  20 CC FF             jsr CLRCHN
+000EAB  1               
+000EAB  1  60                   rts
+000EAC  1               
+000EAC  1               ;-----------------------------------------------------------
+000EAC  1               ; OpenLogFileAppend
+000EAC  1               ;   * Open the log file for append.
+000EAC  1               ;
+000EAC  1               ; On Entry: n/a
+000EAC  1               ; On Exit:  C=0 - File is open for appending and CHKOUT is set
+000EAC  1               ;           C=1 - File open failed
+000EAC  1               ;           A-reg has READST code if open fail
+000EAC  1               ;
+000EAC  1               ; Notes:
+000EAC  1               ;  * Due to the use of low-level SD access function
+000EAC  1               ;   sdcard_read_sector, we must keep the log file
+000EAC  1               ;   closed between writes.
+000EAC  1               ;  * After writing to the log file, close it by calling
+000EAC  1               ;    CloseLogFile prior to any other file activity.
+000EAC  1               ;  * Does NOT check if the file exists or prompt for
+000EAC  1               ;    overwrite.
+000EAC  1               ;-----------------------------------------------------------
+000EAC  1               OpenLogFileAppend:
+000EAC  1               
+000EAC  1  A9 E0                lda #<str_buf           ; Assemble the filename in str_buf
+000EAE  1  A2 16                ldx #>str_buf
+000EB0  1  85 24                sta MemPtr
+000EB2  1  86 25                stx MemPtr+1
+000EB4  1               
+000EB4  1               ; Copy the log file name to the buffer
+000EB4  1               
+000EB4  1  A0 00                ldy #0
+000EB6  1  A2 00                ldx #0
+000EB8  1               @next1:
+000EB8  1  BD 80 17             lda log_fname_buf,x
+000EBB  1  91 24                sta (MemPtr),y
+000EBD  1  F0 04                beq @cont1              ; Taken if we just loaded/saved a zero
+000EBF  1  E8                   inx
+000EC0  1  C8                   iny
+000EC1  1  D0 F5                bne @next1              ; Taken if not
+000EC3  1               
+000EC3  1                @cont1:
+000EC3  1               
+000EC3  1               ; Append the append mode string to the filename in the buffer
+000EC3  1               ; (y-reg points to the end of the string in the strbuf buffer)
+000EC3  1               
+000EC3  1  A2 00                ldx     #0
+000EC5  1               @next2:
+000EC5  1  BD 8B 16             lda     AppendModeStr,x
+000EC8  1  91 24                sta     (MemPtr),y
+000ECA  1  F0 04                beq      @cont2
+000ECC  1  E8                   inx
+000ECD  1  C8                   iny
+000ECE  1  D0 F5                bne     @next2           ; Taken if not
+000ED0  1               
+000ED0  1               @cont2:
+000ED0  1               
+000ED0  1               ; Set up for the SETNAM call:
+000ED0  1               
+000ED0  1  98                   tya                                  ; y-reg = strlen
+000ED1  1  A2 E0                ldx #<str_buf
+000ED3  1  A0 16                ldy #>str_buf
+000ED5  1               
+000ED5  1  20 BD FF             jsr SETNAM           ; SETNAM (no return value or flag)
+000ED8  1               
+000ED8  1  A9 07                lda #LOG_FILE_LFN       ; Logical file number
+000EDA  1  A2 08                ldx #8                  ; Device number (always 8)
+000EDC  1  A8                   tay                     ; Secondary is LFN
+000EDD  1               
+000EDD  1  20 BA FF             jsr SETLFS              ; SETLFS - A-logical file number, X-device (8), y secondary (no return value or flag)
+000EE0  1  20 C0 FF             jsr OPEN                ; OPEN (no params), C=1 on error
+000EE3  1  20 B7 FF             jsr READST              ; READST
+000EE6  1  C9 00                cmp #0                  ; Error?
+000EE8  1  D0 07                bne @exit_err           ; Taken if error (A-reg has READST return)
+000EEA  1               
+000EEA  1  A2 07                ldx #LOG_FILE_LFN
+000EEC  1  20 C9 FF             jsr CHKOUT
+000EEF  1               
+000EEF  1               ; Success exit:
+000EEF  1               @exit_OK:
+000EEF  1  18                   clc
+000EF0  1  60                   rts
+000EF1  1               
+000EF1  1               ; OPEN error, a-reg has READST code:
+000EF1  1               @exit_err:
+000EF1  1  38                   sec
+000EF2  1  60                   rts
+000EF3  1               
+000EF3  1               ;-----------------------------------------------------------
+000EF3  1               ; OpenLogFileWrite
+000EF3  1               ;   * Open the log file for writing, write the header, and
+000EF3  1               ;     then close it.
+000EF3  1               ;
+000EF3  1               ; On Entry: n/a
+000EF3  1               ; On Exit:  C=0 - File is open for writing
+000EF3  1               ;           C=1 - File open failed or overwrite was denied
+000EF3  1               ;           A-reg has READST code if open fail
+000EF3  1               ;           or 0 if overwrite was denied
+000EF3  1               ;
+000EF3  1               ; Note: Due to the use of low-level SD access function
+000EF3  1               ;       sdcard_read_sector, we must keep the log file
+000EF3  1               ;       closed between writes.
+000EF3  1               ;-----------------------------------------------------------
+000EF3  1               OpenLogFileWrite:
+000EF3  1               
+000EF3  1               ; Set up for filename StrLen:
+000EF3  1  A9 80                lda #<log_fname_buf      ; Get filename length
+000EF5  1  A2 17                ldx #>log_fname_buf
+000EF7  1  20 05 11             jsr StrLen         ; y-reg = length
+000EFA  1               
+000EFA  1               ; Set up for FileExists is a bit different:
+000EFA  1  98                   tya                ; a-reg = fname length
+000EFB  1  A2 80                ldx #<log_fname_buf
+000EFD  1  A0 17                ldy #>log_fname_buf
+000EFF  1               
+000EFF  1               ;   On Exit:  C = 0 - File exists
+000EFF  1               ;                 1 - File does NOT exist
+000EFF  1  20 48 12             jsr FileExists
+000F02  1  B0 2F                bcs @prep_log_fname    ; Taken if it does NOT exist (skip overwrite prompt)
+000F04  1               
+000F04  1               ; File exists, so see if overwrite is OK with the user:
+000F04  1               
+000F04  1  A9 BF                lda #<overwrite_msgL    ; msgL for Log.
+000F06  1  A2 14                ldx #>overwrite_msgL
+000F08  1  20 EE 10             jsr StrOut
+000F0B  1  A9 80                lda #<log_fname_buf
+000F0D  1  A2 17                ldx #>log_fname_buf
+000F0F  1  20 EE 10             jsr StrOut
+000F12  1  A9 CA                lda #<overwrite_msg1
+000F14  1  A2 14                ldx #>overwrite_msg1
+000F16  1  20 EE 10             jsr StrOut
+000F19  1               
+000F19  1  20 1A 10             jsr GetYN
+000F1C  1               
+000F1C  1                       ; Give a little space...
+000F1C  1  08                   php
+000F1D  1  48                   pha
+000F1E  1  A9 0D                lda #CR
+000F20  1  20 D2 FF             jsr CHROUT
+000F23  1  A9 0D                lda #CR
+000F25  1  20 D2 FF             jsr CHROUT
+000F28  1  68                   pla
+000F29  1  28                   plp
+000F2A  1               
+000F2A  1  90 03                bcc @no_ESC        ; Taken if ESC not pressed
+000F2C  1               
+000F2C  1               @exit_esc2:
+000F2C  1  4C B1 0F             jmp @exit_esc      ; Taken if ESC pressed
+000F2F  1               
+000F2F  1               @no_ESC:
+000F2F  1  C9 4E                cmp #PETSCII_N     ; Rejected?
+000F31  1  F0 F9                beq @exit_esc2     ; Taken if so
+000F33  1               
+000F33  1               ; Prepare the filename by adding the overwrite string at the beginning and the mode string at the end.
+000F33  1               @prep_log_fname:
+000F33  1  A9 E0                lda #<str_buf      ; Assemble the filename in str_buf
+000F35  1  A2 16                ldx #>str_buf
+000F37  1  85 24                sta MemPtr
+000F39  1  86 25                stx MemPtr+1
+000F3B  1               
+000F3B  1               ; Copy the "@:" (overwrite) prefix to the buffer:
+000F3B  1               
+000F3B  1  A2 00               ldx     #0       ; Index for strings being copied
+000F3D  1  A0 00               ldy     #0       ; Index for string at (MemPtr) (str_buf)
+000F3F  1               @next0:
+000F3F  1  BD 83 16             lda     OverwriteStr,x
+000F42  1  91 24                sta     (MemPtr),y
+000F44  1  F0 04                beq     @cont0          ; Taken if we loaded/saved a zero
+000F46  1  E8                   inx
+000F47  1  C8                   iny
+000F48  1  D0 F5                bne     @next0          ; Taken if not
+000F4A  1               @cont0:
+000F4A  1               
+000F4A  1               ; Copy the log file name to the buffer after the prefix
+000F4A  1               ; (y-reg points to the end of the string in the strbuf buffer)
+000F4A  1               
+000F4A  1  A2 00               ldx     #0
+000F4C  1               @next1:
+000F4C  1  BD 80 17             lda     log_fname_buf,x
+000F4F  1  91 24                sta     (MemPtr),y
+000F51  1  F0 04                beq     @cont1          ; Taken if we just loaded/saved a zero
+000F53  1  E8                   inx
+000F54  1  C8                   iny
+000F55  1  D0 F5                bne     @next1          ; Taken if not
+000F57  1               
+000F57  1                @cont1:
+000F57  1               
+000F57  1               ; Append the write mode string to the prefix and filename in the buffer
+000F57  1               ; (y-reg points to the end of the string in the strbuf buffer)
+000F57  1               
+000F57  1  A2 00                ldx     #0
+000F59  1               @next2:
+000F59  1  BD 86 16             lda     WriteModeStr,x
+000F5C  1  91 24                sta     (MemPtr),y
+000F5E  1  F0 04                beq      @cont2
+000F60  1  E8                   inx
+000F61  1  C8                   iny
+000F62  1  D0 F5                bne     @next2           ; Taken if not
+000F64  1               
+000F64  1               @cont2:
+000F64  1               
+000F64  1               ; Set up for the SETNAM call:
+000F64  1               
+000F64  1  98                   tya                                  ; y-reg = strlen
+000F65  1  A2 E0                ldx #<str_buf
+000F67  1  A0 16                ldy #>str_buf
+000F69  1               
+000F69  1  20 BD FF             jsr SETNAM           ; SETNAM (no return value or flag)
+000F6C  1               
+000F6C  1  A9 07                lda #LOG_FILE_LFN       ; Logical file number
+000F6E  1  A2 08                ldx #8                  ; Device number (always 8)
+000F70  1  A8                   tay                     ; Secondary is LFN
+000F71  1               
+000F71  1  20 BA FF             jsr SETLFS              ; SETLFS - A-logical file number, X-device (8), y secondary (no return value or flag)
+000F74  1  20 C0 FF             jsr OPEN                ; OPEN (no params), C=1 on error
+000F77  1  20 B7 FF             jsr READST              ; READST
+000F7A  1  C9 00                cmp #0                  ; Error?
+000F7C  1  D0 37                bne @exit_err           ; Taken if error (A-reg has READST return)
+000F7E  1               
+000F7E  1  A2 07                ldx #LOG_FILE_LFN
+000F80  1  20 C9 FF             jsr CHKOUT
+000F83  1               
+000F83  1               ; Write data file name to log file:
+000F83  1  A9 97                lda #<log_file_msg0     ; Data file name.
+000F85  1  A2 15                ldx #>log_file_msg0
+000F87  1  20 EE 10             jsr StrOut
+000F8A  1  A9 30                lda #<fname_buf
+000F8C  1  A2 17                ldx #>fname_buf
+000F8E  1  20 EE 10             jsr StrOut
+000F91  1  A9 A2                lda #<log_file_msg1
+000F93  1  A2 15                ldx #>log_file_msg1
+000F95  1  20 EE 10             jsr StrOut
+000F98  1               
+000F98  1               ; Write read method to log file:
+000F98  1  A9 A5                lda #<log_file_read_method0
+000F9A  1  A2 15                ldx #>log_file_read_method0
+000F9C  1  20 EE 10             jsr StrOut
+000F9F  1               
+000F9F  1  20 78 0D             jsr ShowReadMethod
+000FA2  1               
+000FA2  1  A9 B3                lda #<log_file_read_method1
+000FA4  1  A2 15                ldx #>log_file_read_method1
+000FA6  1  20 EE 10             jsr StrOut
+000FA9  1               
+000FA9  1               
+000FA9  1  20 A3 0E             jsr CloseLogFile        ; Close file to flush write buffer
+000FAC  1  20 CC FF             jsr CLRCHN
+000FAF  1               
+000FAF  1               ; Success exit:
+000FAF  1               @exit_OK:
+000FAF  1  18                   clc
+000FB0  1  60                   rts
+000FB1  1               
+000FB1  1               ; For ESC or "no" entered:
+000FB1  1               @exit_esc:
+000FB1  1  A9 00                lda #0
+000FB3  1  38                   sec
+000FB4  1  60                   rts
+000FB5  1               
+000FB5  1               ; OPEN error, a-reg has READST code:
+000FB5  1               @exit_err:
+000FB5  1  38                   sec
+000FB6  1  60                   rts
+000FB7  1               
+000FB7  1                   .include "sec_utils.asm"
+000FB7  2               ;---------------------------------------------------------------------------------------------
+000FB7  2               ; sec_utils.asm - Common utility functions for the write and read sector programs.
+000FB7  2               ;
+000FB7  2               ; Included in the main program source files.
+000FB7  2               ;
+000FB7  2               ; Pete Wyspianski (AKA Gollan)
+000FB7  2               ; October 2026
+000FB7  2               ; Ottawa, Canada
+000FB7  2               ;---------------------------------------------------------------------------------------------
+000FB7  2               ; Contents:
+000FB7  2               ;   CONTROL CODES
+000FB7  2               ;   CalcSectorChecksum - Calculates a simple checksum for a specified sector_buf
+000FB7  2               ;   CreateSector - Creates a sector in write_sector_buf using CurSector
+000FB7  2               ;   GetYN - Waits until Y, N, RETURN, or ESC is pressed
+000FB7  2               ;   GetCharInput - reads a single character of keyboard input
+000FB7  2               ;   GetLineInput - Reads a line of keyboard input
+000FB7  2               ;   TextToHex - Convert PETSCII hex digit in A-reg to a hex digit
+000FB7  2               ;   StrOut
+000FB7  2               ;   StrLen
+000FB7  2               ;   Hex16Dec - Converts a 16-bit word to ASCII decimal digits
+000FB7  2               ;   Div10 - Divides a 16-bit word by 10 returning the quotient and remainder.
+000FB7  2               ;   ConvDec16 - Converts a 1-5 digit decimal number to 16-bit hexidecimal (0-65535)
+000FB7  2               ;   FileExists - Checks if a file exists
+000FB7  2               ;   WordOut - prints a given word in hexadecimal
+000FB7  2               ;   Word32Out - prints the given 4-byte value in hexadecimal
+000FB7  2               ;   Hex3Out - prints the hex value of 3 digit value
+000FB7  2               ;   ByteOut - prints the hex value of a given byte
+000FB7  2               
+000FB7  2               
+000FB7  2               ;---------------------------------------------------------
+000FB7  2               ; Control Codes
+000FB7  2               ;---------------------------------------------------------
+000FB7  2               
+000FB7  2               BREAK = $03   ; Ctrl-C
+000FB7  2               BELL  = $07   ; More like a beep
+000FB7  2               LF    = $0A   ; AKA \n - New line in Linux AND X16-EDIT ISO mode
+000FB7  2               CR    = $0D   ; AKA \r - New line character in Commodore and CX16 PETSCII
+000FB7  2               BS    = $14   ; Backspace key and character
+000FB7  2               ESC   = $1B   ; ESC key
+000FB7  2               SPACE = $20   ; Space key and character
+000FB7  2               DQ    = $22   ; Double quote (stress-free way to include double quote in strings)
+000FB7  2               
+000FB7  2               
+000FB7  2               ISO_OFF = $8F   ; Also clears screen
+000FB7  2               PETSCII_U = $8E
+000FB7  2               PETSCII_UL = $0E
+000FB7  2               CLS = $93
+000FB7  2               
+000FB7  2               ; Some assemblers do dodgy things with text so..
+000FB7  2               PETSCII_A = $41           ; PETSCII "A"
+000FB7  2               PETSCII_B = $42           ; PETSCII "B"
+000FB7  2               PETSCII_C = $43           ; PETSCII "C"
+000FB7  2               PETSCII_M = $4D           ; PETSCII "M"
+000FB7  2               PETSCII_N = $4E           ; PETSCII "N"
+000FB7  2               PETSCII_S = $5E           ; PETSCII "S"
+000FB7  2               PETSCII_Y = $59           ; PETSCII "Y"
+000FB7  2               PETSCII_Z = $7A           ; PETSCII "Z"
+000FB7  2               
+000FB7  2               
+000FB7  2               ;------------------------------------------------------------------
+000FB7  2               ; CalcSectorCheckum
+000FB7  2               ;       Calculates a simple checksum for a specified sector_buf
+000FB7  2               ;
+000FB7  2               ; On Entry: a,x - pointer to a sector_buf to use
+000FB7  2               ; On Exit:  SectorCS contains the checksum
+000FB7  2               ;
+000FB7  2               ; Uses: (ZP) SectorCS, SecPtrLow, SecPtrHigh
+000FB7  2               ; Note: this code assumes that SECTOR_SIZE is 512
+000FB7  2               ;------------------------------------------------------------------
+000FB7  2               CalcSectorChecksum:
+000FB7  2               
+000FB7  2  85 2A                sta SecPtrLow              ; Save the sector_buf pointer
+000FB9  2  86 2B                stx SecPtrLow+1
+000FBB  2  85 2C                sta SecPtrHigh
+000FBD  2  E8                   inx                        ; Add $100 to SecPtrHigh
+000FBE  2  86 2D                stx SecPtrHigh+1
+000FC0  2               
+000FC0  2  64 36                stz SectorCS
+000FC2  2  64 37                stz SectorCS+1
+000FC4  2               
+000FC4  2  A0 00                ldy #0                  ; Index
+000FC6  2               @next:
+000FC6  2  18                   clc
+000FC7  2  B1 2A                lda (SecPtrLow),y        ; Add a word from low half of buffer to SectorCS
+000FC9  2  65 36                adc SectorCS
+000FCB  2  85 36                sta SectorCS
+000FCD  2  C8                   iny
+000FCE  2  B1 2A                lda (SecPtrLow),y
+000FD0  2  65 37                adc SectorCS+1
+000FD2  2  85 37                sta SectorCS+1
+000FD4  2  88                   dey
+000FD5  2               
+000FD5  2  18                   clc
+000FD6  2  B1 2C                lda (SecPtrHigh),y   ; Add a word from high half of buffer to SectorCS
+000FD8  2  65 36                adc SectorCS
+000FDA  2  85 36                sta SectorCS
+000FDC  2  C8                   iny
+000FDD  2  B1 2C                lda (SecPtrHigh),y
+000FDF  2  65 37                adc SectorCS+1
+000FE1  2  85 37                sta SectorCS+1
+000FE3  2               
+000FE3  2  C8                   iny             ; y-reg has already been incremented once, so one more for next word
+000FE4  2  D0 E0                bne @next
+000FE6  2               
+000FE6  2  60                   rts
+000FE7  2               
+000FE7  2               ;-----------------------------------------------------------
+000FE7  2               ; CreateSector
+000FE7  2               ;       Create a sector in write_sector_buf using CurSector
+000FE7  2               ;
+000FE7  2               ; On Entry: n/a
+000FE7  2               ; On Exit:  n/a
+000FE7  2               ;
+000FE7  2               ; Uses: write_sector_buf
+000FE7  2               ;
+000FE7  2               ; Note: this code assumes that SECTOR_SIZE is 512
+000FE7  2               ;-----------------------------------------------------------
+000FE7  2               CreateSector:
+000FE7  2               
+000FE7  2               ; Populate the sector with its CurSector ID word:
+000FE7  2               
+000FE7  2  A2 00                ldx #0                  ; Index
+000FE9  2               @next:
+000FE9  2  A5 34                lda CurSector           ; LSB of sector ID
+000FEB  2  9D 20 18             sta write_sector_buf,x        ; Low half of buffer
+000FEE  2  9D 20 19             sta write_sector_buf+$100,x   ; High half of buffer
+000FF1  2  A5 35                lda CurSector+1         ; MSB of sector ID
+000FF3  2  9D 21 18             sta write_sector_buf+1,x      ; Low half of buffer
+000FF6  2  9D 21 19             sta write_sector_buf+$101,x   ; High half of buffer
+000FF9  2  E8                   inx
+000FFA  2  E8                   inx
+000FFB  2  D0 EC                bne @next
+000FFD  2               
+000FFD  2               ; Set bytes 2 and 3 to zero for checksum computation:
+000FFD  2               
+000FFD  2  9C 22 18             stz write_sector_buf+2
+001000  2  9C 23 18             stz write_sector_buf+3
+001003  2               
+001003  2               ; Get the checksum for this buffer with the CS set to zero:
+001003  2               
+001003  2  A9 20                lda #<write_sector_buf
+001005  2  A2 18                ldx #>write_sector_buf
+001007  2  20 B7 0F             jsr CalcSectorChecksum
+00100A  2               
+00100A  2               ; Calculate the final checksum:
+00100A  2               
+00100A  2  A9 FF                lda #$ff
+00100C  2  38                   sec
+00100D  2  E5 36                sbc SectorCS
+00100F  2  8D 22 18             sta write_sector_buf+2
+001012  2  A9 FF                lda #$ff
+001014  2  E5 37                sbc SectorCS+1
+001016  2  8D 23 18             sta write_sector_buf+3
+001019  2  60                   rts
+00101A  2               
+00101A  2               
+00101A  2               ;-----------------------------------------------------------
+00101A  2               ; GetYN - Waits until Y, N, RETURN, or ESC is pressed
+00101A  2               ;
+00101A  2               ; On Entry: n/a
+00101A  2               ; On Exit:  C=0 A character was pressed:
+00101A  2               ;           a-reg = char pressed ("Y","N")
+00101A  2               ;             If RETURN was pressed: returns "Y"
+00101A  2               ;           C=1 ESC was pressed, no input
+00101A  2               ;             ax-regs destroyed
+00101A  2               ;
+00101A  2               ; Uses: n/a
+00101A  2               ;-----------------------------------------------------------
+00101A  2               GetYN:
+00101A  2  20 E4 FF             jsr GETIN   ; Trashes y-reg
+00101D  2  C9 00                cmp #0
+00101F  2  F0 F9                beq GetYN
+001021  2  C9 1B                cmp #ESC             ; ESC pressed?
+001023  2  F0 14                beq @exit_esc
+001025  2  C9 0D                cmp #CR              ; ENTER pressed?
+001027  2  D0 04                bne @not_CR          ; Taken if NOT
+001029  2  A9 59                lda #PETSCII_Y       ; Default is 'Y'
+00102B  2  80 0A                bra @exit
+00102D  2               
+00102D  2               @not_CR:
+00102D  2  29 5F                and #$5F             ; Shift UPPER characters to PETSCII
+00102F  2  C9 59                cmp #PETSCII_Y
+001031  2  F0 04                beq @exit            ; Taken if so
+001033  2  C9 4E                cmp #PETSCII_N
+001035  2  D0 E3                bne GetYN            ; Taken if NOT
+001037  2               
+001037  2               @exit:
+001037  2  18                   clc
+001038  2  60                   rts
+001039  2               
+001039  2               @exit_esc:
+001039  2  38                   sec
+00103A  2  60                   rts
+00103B  2               
+00103B  2               
+00103B  2               
+00103B  2               ;-----------------------------------------------------------
+00103B  2               ; GetCharInput - reads a single character of keyboard input
+00103B  2               ;                and returns SCREEN CODES (see Notes)
+00103B  2               ; On Entry: n/a
+00103B  2               ; On Exit:  C=0 - A character or RETURN was pressed
+00103B  2               ;             a- reg = char
+00103B  2               ;           C=1 ESC was pressed, no input
+00103B  2               ;
+00103B  2               ; NoteS: Restricted to printable characters
+00103B  2               ;        Returns SCREEN CODES, not PETSCII
+00103B  2               ;  ***** This should call a ScreenCodeToPETSCII function
+00103B  2               ;-----------------------------------------------------------
+00103B  2               GetCharInput:
+00103B  2               
+00103B  2  A9 14                lda #blink_enable   ; Turn ON the blinking cursor:
+00103D  2  A2 00                ldx #0              ; 0=blink enable
+00103F  2  20 AB FE             jsr EXTAPI
+001042  2               
+001042  2               @key_wait:
+001042  2  20 E4 FF             jsr GETIN             ; Trashes y-reg
+001045  2  C9 00                cmp #0
+001047  2  F0 F9                beq @key_wait
+001049  2               
+001049  2  48                   pha                  ; A key was pressed, so turn OFF the blinking cursor
+00104A  2  A9 14                lda #blink_enable
+00104C  2  A2 FF                ldx #$FF             ; $FF=blink disable
+00104E  2  20 AB FE             jsr EXTAPI
+001051  2  68                   pla
+001052  2               
+001052  2  C9 0D                cmp #CR              ; ENTER key?
+001054  2  F0 11                beq @exit_ok         ; Taken if so
+001056  2  C9 1B                cmp #ESC             ; ESC key?
+001058  2  F0 0F                beq @exit_esc        ; Taken if so
+00105A  2  C9 20                cmp #' '             ; Printable?
+00105C  2  90 E4                bcc @key_wait        ; Taken if NOT (try again)
+00105E  2  C9 7B                cmp #PETSCII_Z+1
+001060  2  B0 E0                bcs @key_wait        ; Taken if NOT printable (try again)
+001062  2  AA                   tax                  ; Save the char
+001063  2  20 D2 FF             jsr CHROUT           ; Echo printable char...
+001066  2  8A                   txa
+001067  2               
+001067  2               ; All else falls into exit_ok:
+001067  2               @exit_ok:
+001067  2  18                   clc                  ; Success exit
+001068  2  60                   rts
+001069  2               
+001069  2               @exit_esc:
+001069  2  38                   sec                 ; Input abandoned...
+00106A  2  60                   rts
+00106B  2               
+00106B  2               
+00106B  2               
+00106B  2               ;-----------------------------------------------------------
+00106B  2               ; GetLineInput - reads a line of keyboard input
+00106B  2               ;
+00106B  2               ; On Entry: a,x= pointer to the buffer
+00106B  2               ; On Exit:  C=0 ENTER/RETURN was pressed:
+00106B  2               ;             buffer contains null-terminateded input
+00106B  2               ;             y-reg = number of chars entered (0 if RETURN)
+00106B  2               ;             ax-regs destroyed
+00106B  2               ;           C=1 ESC was pressed, no input
+00106B  2               ;             ax-regs destroyed
+00106B  2               ;
+00106B  2               ; Uses: (ZP) scratch0, (ZP) buf_ptr
+00106B  2               ;-----------------------------------------------------------
+00106B  2               
+00106B  2               GetLineInput:
+00106B  2               
+00106B  2  85 46                sta buf_ptr
+00106D  2  86 47                stx buf_ptr+1
+00106F  2               
+00106F  2  64 2E                stz scratch0        ; kbd_buf index
+001071  2               @read_char:
+001071  2               
+001071  2  A9 14                lda #blink_enable   ; Turn ON the blinking cursor:
+001073  2  A2 00                ldx #0              ; 0=blink enable
+001075  2  20 AB FE             jsr EXTAPI
+001078  2               
+001078  2               @key_wait:
+001078  2  20 E4 FF             jsr GETIN   ; Trashes y-reg
+00107B  2  C9 00                cmp #0
+00107D  2  F0 F9                beq @key_wait
+00107F  2               
+00107F  2  48                   pha                   ; A key was pressed, so turn OFF the blinking cursor:
+001080  2  A9 14                lda #blink_enable
+001082  2  A2 FF                ldx #$FF             ; $FF=blink disable
+001084  2  20 AB FE             jsr EXTAPI
+001087  2  68                   pla
+001088  2               
+001088  2  C9 0D                cmp #CR              ; ENTER key?
+00108A  2  F0 46                beq @exit_ok         ; Taken if so
+00108C  2  C9 1B                cmp #ESC             ; ESC key?
+00108E  2  F0 4A                beq @exit_esc        ; Taken if so
+001090  2  C9 14                cmp #BS              ; Backspace?
+001092  2  F0 25                beq @do_backspace    ; Taken if so
+001094  2               
+001094  2               ; No other control characters, so screen them out:
+001094  2  C9 20                cmp #' '             ; Space is lowest printable char
+001096  2  90 D9                bcc @read_char       ; Ignore char if it is lower than space
+001098  2               
+001098  2               ; We *could* check for high range chars here, but we don't...
+001098  2  A4 2E                ldy scratch0         ; Fetch kbd_buf index
+00109A  2  91 46                sta (buf_ptr),y      ; Save character
+00109C  2  20 D2 FF             jsr CHROUT           ; Echo character (xy-regs are preserved)
+00109F  2  C8                   iny                  ; Increment index
+0010A0  2  84 2E                sty scratch0
+0010A2  2  C0 50                cpy #KBD_BUF_SIZE    ; Are we at the max?
+0010A4  2  D0 CB                bne @read_char       ; Taken if not
+0010A6  2  C6 2E                dec  scratch0        ; Ignore overflow characters
+0010A8  2               
+0010A8  2  A9 14                lda #BS
+0010AA  2  20 D2 FF             jsr CHROUT           ; And back up the cursor
+0010AD  2  A9 20                lda #SPACE
+0010AF  2  20 D2 FF             jsr CHROUT           ; And erase it
+0010B2  2  A9 14                lda #BS
+0010B4  2  20 D2 FF             jsr CHROUT           ; And back up
+0010B7  2  80 B8                bra @read_char
+0010B9  2               
+0010B9  2               @do_backspace:
+0010B9  2  A4 2E                ldy scratch0         ; Fetch kbd_buf index
+0010BB  2  C0 00                cpy #0               ; At start of kbuf?
+0010BD  2  F0 B2                beq @read_char       ; Nothing to delete
+0010BF  2               
+0010BF  2  C6 2E                dec scratch0         ; Move back one char
+0010C1  2  A9 14                lda #BS
+0010C3  2  20 D2 FF             jsr CHROUT           ; Back up the cursor
+0010C6  2  A9 20                lda #SPACE
+0010C8  2  20 D2 FF             jsr CHROUT            ; Overwrite char
+0010CB  2  A9 14                lda #BS               ; Backspace again
+0010CD  2  20 D2 FF             jsr CHROUT            ; Move cursor left
+0010D0  2  80 9F                bra @read_char
+0010D2  2               
+0010D2  2               @exit_ok:
+0010D2  2  A4 2E                ldy scratch0         ; Fetch kbd_buf index
+0010D4  2  A9 00                lda #0               ; Null terminate
+0010D6  2  91 46                sta (buf_ptr),y
+0010D8  2  18                   clc                  ; Success exit
+0010D9  2  60                   rts
+0010DA  2               
+0010DA  2               @exit_esc:
+0010DA  2  A9 00                lda #0
+0010DC  2  92 46                sta (buf_ptr)
+0010DE  2  38                   sec                 ; Input abandoned...
+0010DF  2  60                   rts
+0010E0  2               
+0010E0  2               ;----------------------------------------------------------------
+0010E0  2               ; TextToHex - Convert PETSCII hex digit in A-reg to a hex digit
+0010E0  2               ;
+0010E0  2               ; On Entry: A = PETSCII hex digit (0-9,a-f,A-F)
+0010E0  2               ; On Exit:  A = hex digit 0-f
+0010E0  2               ;
+0010E0  2               ; Note: non-hex digits are undefinied
+0010E0  2               ;----------------------------------------------------------------
+0010E0  2               TextToHex:
+0010E0  2  C9 41                cmp #'a'
+0010E2  2  B0 04                bcs @alpha
+0010E4  2  38                   sec
+0010E5  2  E9 30                sbc #'0'
+0010E7  2  60                   rts
+0010E8  2               @alpha:
+0010E8  2  29 5F                and #$5F                ; Shift UPPER characters to PETSCII
+0010EA  2  38                   sec
+0010EB  2  E9 37                sbc #('a'-$a)           ; Map 'a'-'f' to $a-$f
+0010ED  2  60                   rts
+0010EE  2               
+0010EE  2               ;-----------------------------------------------------
+0010EE  2               ; StrOut:
+0010EE  2               ;   Prior   : Prepare screen and character set
+0010EE  2               ;   On Entry: A,X = pointer to zero-terminated string
+0010EE  2               ;                   to write to the screen
+0010EE  2               ;   On Exit:  C = 0 - success
+0010EE  2               ;                 1 - error
+0010EE  2               ;             All other regs are preserved
+0010EE  2               ;
+0010EE  2               ; Uses 2 bytes of ZP: MemPtr and MemPtr+1
+0010EE  2               ;-----------------------------------------------------
+0010EE  2               StrOut:
+0010EE  2  48           		pha
+0010EF  2  5A           		phy
+0010F0  2  85 24        		sta MemPtr
+0010F2  2  86 25        		stx MemPtr+1
+0010F4  2  A0 00        	    ldy #0
+0010F6  2               @next:
+0010F6  2  B1 24        		lda (MemPtr),y
+0010F8  2  F0 08        		beq @done
+0010FA  2  20 D2 FF     		jsr CHROUT
+0010FD  2  B0 03        		bcs @done	; error
+0010FF  2  C8           		iny
+001100  2  D0 F4        		bne @next	; falls through if y wraps around
+001102  2               @done:
+001102  2  7A           		ply
+001103  2  68           		pla
+001104  2  60           		rts
+001105  2               
+001105  2               
+001105  2               ;-------------------------------------------------------------------------
+001105  2               ; StrLen - Returns the length of a zero-terminated string
+001105  2               ;
+001105  2               ;   On Entry: A,X = pointer to zero-terminated string
+001105  2               ;   On Exit:  C = Y = the length of the string
+001105  2               ;             All other regs are preserved
+001105  2               ;
+001105  2               ; Uses 2 bytes of ZP: MemPtr and MemPtr+1
+001105  2               ;
+001105  2               ; Note: The maximum measurable string length is 255 characters
+001105  2               ;       If a string is longer than 256 characters, 255 will be returned
+001105  2               ;-------------------------------------------------------------------------
+001105  2               StrLen:
+001105  2  85 24            sta MemPtr
+001107  2  86 25            stx MemPtr+1
+001109  2               
+001109  2  A0 00            ldy #0
+00110B  2               ; Look for the null byte at the end:
+00110B  2               @1:
+00110B  2  B1 24            lda (MemPtr),y
+00110D  2  F0 04            beq @null_found
+00110F  2  C8               iny
+001110  2  D0 F9            bne @1
+001112  2               ; String length overflow, return $255
+001112  2  88               dey
+001113  2               
+001113  2               @null_found:
+001113  2  60               rts
+001114  2               
+001114  2               ;-----------------------------------------------------------
+001114  2               ; Hex16Dec - Converts a 16-bit word to ASCII decimal digits
+001114  2               ;
+001114  2               ; On Entry: MemPtr - points to string buffer with room for
+001114  2               ;                    up to 5 digits plus null terminator.
+001114  2               ;           ax - word to be converted
+001114  2               ;
+001114  2               ; On Exit:  (MemPtr) contains 1-5 ASCII digits and a null
+001114  2               ;            terminator
+001114  2               ;
+001114  2               ;           All regs destroyed
+001114  2               ;
+001114  2               ; Uses : (ZP) MemPtr
+001114  2               ;        Hex16Dec_buf (internal buffer - 6 bytes)
+001114  2               ;        quot (2 bytes) - parameter to Div10
+001114  2               ; Calls: Div10
+001114  2               ;-----------------------------------------------------------
+001114  2               Hex16Dec:
+001114  2  8D AC 12             sta quot         ; Set up call to Div10
+001117  2  8E AD 12             stx quot+1
+00111A  2               
+00111A  2  A2 00                ldx #0           ; x-reg is our internal buffer index
+00111C  2               
+00111C  2               @next:
+00111C  2  AD AC 12             lda quot
+00111F  2  8D AA 12             sta num
+001122  2  AD AD 12             lda quot+1
+001125  2  8D AB 12             sta num+1
+001128  2  DA                   phx
+001129  2  20 67 11             jsr Div10       ; Get first digit
+00112C  2  FA                   plx
+00112D  2  AD AE 12             lda rem
+001130  2  18                   clc             ; Convert to ASCII
+001131  2  69 30                adc #'0'
+001133  2  9D 61 11             sta Hex16Dec_buf,x
+001136  2  E8                   inx
+001137  2               
+001137  2               ; Check the quotient:
+001137  2  AD AC 12             lda quot
+00113A  2  0D AD 12             ora quot+1      ; Cheeky way to check 16-bit for zero
+00113D  2  D0 DD                bne @next       ; Taken if quotient is not zero...
+00113F  2               
+00113F  2               ; Prune the leading zeros and reverse the digits into the specified buffer:
+00113F  2               
+00113F  2               ; Find the first non-zero digit. x-reg points past the last digit.
+00113F  2               @next1:
+00113F  2  CA                   dex             ; Point at the last digit
+001140  2  30 14                bmi @zero       ; Taken if the whole number is zero
+001142  2  BD 61 11             lda Hex16Dec_buf,x
+001145  2  C9 30                cmp #'0'        ; Zero?
+001147  2  F0 F6                beq @next1      ; Take if so...
+001149  2               
+001149  2               ; The string contains at least one non-zero digit and y-reg points at the first one:
+001149  2               
+001149  2  A0 00                ldy #0          ; Index to the caller-specified buffer
+00114B  2               @next2:
+00114B  2  BD 61 11             lda Hex16Dec_buf,x
+00114E  2  91 24                sta (MemPtr),y
+001150  2  C8                   iny
+001151  2  CA                   dex
+001152  2  10 F7                bpl @next2
+001154  2  80 06                bra @null_term_exit
+001156  2               
+001156  2               ; The number is zero so set it up:
+001156  2               @zero:
+001156  2  A0 00                ldy #0          ; Has to be set up on this branch.
+001158  2  A9 30                lda #'0'
+00115A  2  91 24                sta (MemPtr),y  ; Save the '0' character
+00115C  2               @null_term_exit:
+00115C  2               ;        iny
+00115C  2  A9 00                lda #0
+00115E  2  91 24                sta (MemPtr),y  ; null-terminate
+001160  2  60                   rts
+001161  2               
+001161  2  xx xx xx xx  Hex16Dec_buf: .res 6           ; 5 digits and a null (but not needed)
+001165  2  xx xx        
+001167  2               
+001167  2               
+001167  2               ;-----------------------------------------------------------
+001167  2               ; Div10 - Divides a 16-bit word by 10 returning the
+001167  2               ;         quotient and remainder.
+001167  2               ;
+001167  2               ; On Entry: num  - set to numerator (16 bits)
+001167  2               ;
+001167  2               ; On Exit:  quot - quotient (16 bits)
+001167  2               ;           rem  - remainder (8 bits)
+001167  2               ;
+001167  2               ;           a,x-regs destroyed, y-reg preserved
+001167  2               ;
+001167  2               ; Uses: num (2 bytes), quot (2 bytes), rem (1 byte)
+001167  2               ;
+001167  2               ; Note:
+001167  2               ;   * Could speed this up a small amount by using zp for
+001167  2               ;     variables
+001167  2               ;-----------------------------------------------------------
+001167  2               
+001167  2               Div10:
+001167  2  9C AE 12             stz rem              ; Initialize our outputs
+00116A  2  9C AC 12             stz quot
+00116D  2  9C AD 12             stz quot+1
+001170  2               
+001170  2  A2 10                ldx #16              ; Processing 16 bits
+001172  2               @next:
+001172  2  0E AA 12             asl num              ; Generate 1 bit of the quotient
+001175  2  2E AB 12             rol num+1
+001178  2  2E AE 12             rol rem
+00117B  2               
+00117B  2  AD AE 12             lda rem
+00117E  2  C9 0A                cmp #10
+001180  2  90 08                bcc @zero_bit
+001182  2               
+001182  2  E9 0A                sbc #10
+001184  2  8D AE 12             sta rem
+001187  2  38                   sec
+001188  2  80 01                bra @shift_quot
+00118A  2               
+00118A  2               @zero_bit:
+00118A  2  18                   clc
+00118B  2               
+00118B  2               @shift_quot:
+00118B  2  2E AC 12             rol quot
+00118E  2  2E AD 12             rol quot+1
+001191  2  CA                   dex
+001192  2  D0 DE                bne @next
+001194  2  60                   rts
+001195  2               
+001195  2               
+001195  2               ;-----------------------------------------------------------
+001195  2               ; ConvDec16 - Converts a 1-5 digit decimal number to 16-bit
+001195  2               ;            hexidecimal (0-65535)
+001195  2               ;
+001195  2               ; On Entry: ax - pointer to a null-terminated string
+001195  2               ;                containing 1-5 decimal digits (0-65535)
+001195  2               ; On Exit:  C=0 ax contain the 16-bit value
+001195  2               ;           C=1 The string was empty, contained non-numeric
+001195  2               ;               characters, or overflowed 16 bits (see notes).
+001195  2               ;
+001195  2               ; Uses: (ZP) MemPtr, scratch0 , scratch1
+001195  2               ;
+001195  2               ; Notes:
+001195  2               ;   If the calling function ensures that the string has 1-5
+001195  2               ;   decimal digits, then the error return can only be
+001195  2               ;   16-bit overflow (a 5-digit number greater than 65535).
+001195  2               ;-----------------------------------------------------------
+001195  2               ConvDec16:
+001195  2  85 24                sta MemPtr              ; Save the string
+001197  2  86 25                stx MemPtr+1
+001199  2  64 2E                stz scratch0            ; Initialize the value
+00119B  2  64 2F                stz scratch0+1
+00119D  2  A0 00                ldy #0                  ; y-reg is the string index
+00119F  2               
+00119F  2               @next_digit:
+00119F  2  B1 24                lda (MemPtr),y          ; Fetch next digit
+0011A1  2  F0 44                beq @exit_ok            ; Taken if end of string
+0011A3  2               
+0011A3  2  C9 30                cmp #'0'                ; Valid decimal digit?
+0011A5  2  90 3F                bcc @exit_fail          ; Taken if NOT
+0011A7  2  C9 3A                cmp #'9'+1
+0011A9  2  B0 3B                bcs @exit_fail          ;  Taken if not
+0011AB  2  38                   sec
+0011AC  2  E9 30                sbc #'0'                ; Convert to number 0-9
+0011AE  2  18                   clc
+0011AF  2  65 2E                adc scratch0            ; Add the digit to the value
+0011B1  2  85 2E                sta scratch0
+0011B3  2  A5 2F                lda scratch0+1
+0011B5  2  69 00                adc #0
+0011B7  2  85 2F                sta scratch0+1
+0011B9  2  B0 2B                bcs @exit_fail          ; Taken if 16-bit overflow
+0011BB  2               
+0011BB  2  C8                   iny                     ; Index next digit
+0011BC  2  B1 24                lda (MemPtr),y          ; End of string?
+0011BE  2  F0 27                beq @exit_ok            ; Taken if so
+0011C0  2               
+0011C0  2               ; To add another decimal digit, first multiply the current value by 10:
+0011C0  2  A5 2E                lda scratch0            ; Save original value for later...
+0011C2  2  85 30                sta scratch1            ; LSB
+0011C4  2  A5 2F                lda scratch0+1
+0011C6  2  85 31                sta scratch1+1          ; MSB
+0011C8  2               
+0011C8  2  20 ED 11             jsr @x2                 ; scratch0 x2
+0011CB  2  B0 19                bcs @exit_fail          ; 16-bit overflow
+0011CD  2  20 ED 11             jsr @x2                 ; scratch0 x4
+0011D0  2  B0 14                bcs @exit_fail          ; 16-bit overflow
+0011D2  2               
+0011D2  2               ; Add the original value saved earlier to scratch0:
+0011D2  2  18                   clc
+0011D3  2  A5 2E                lda scratch0
+0011D5  2  65 30                adc scratch1
+0011D7  2  85 2E                sta scratch0            ; lsb x 5
+0011D9  2               
+0011D9  2  A5 2F                lda scratch0+1
+0011DB  2  65 31                adc scratch1+1
+0011DD  2  85 2F                sta scratch0+1          ; msb x 5
+0011DF  2  B0 05                bcs @exit_fail          ; 16-bit overflow
+0011E1  2               
+0011E1  2               ; With the value multiplied by 5, do one more x2 get x10:
+0011E1  2  20 ED 11             jsr @x2
+0011E4  2  90 B9                bcc @next_digit         ; Continue if no olverflow
+0011E6  2               
+0011E6  2               @exit_fail:
+0011E6  2  60                   rts
+0011E7  2               
+0011E7  2               @exit_ok:
+0011E7  2  18                   clc
+0011E8  2  A5 2E                lda scratch0            ; Return the value
+0011EA  2  A6 2F                ldx scratch0+1
+0011EC  2  60                   rts
+0011ED  2               
+0011ED  2               
+0011ED  2               ; Function to multiply scratch0 (16 bits) by 2:
+0011ED  2               ; If c=1 on exit, 16-bit overflow occured.
+0011ED  2               @x2:
+0011ED  2  18                   clc
+0011EE  2  A5 2E                lda scratch0
+0011F0  2  0A                   asl a                   ; x 2
+0011F1  2  85 2E                sta scratch0
+0011F3  2  A5 2F                lda scratch0+1
+0011F5  2  2A                   rol a
+0011F6  2  85 2F                sta scratch0+1
+0011F8  2  60                   rts
+0011F9  2               
+0011F9  2               
+0011F9  2               
+0011F9  2               
+0011F9  2               ;--------------------------------------------------
+0011F9  2               ; Word32Out - prints a 4-byte word in hexadecimal
+0011F9  2               ;
+0011F9  2               ; inputs : a,x = POINTER to 4-byte word
+0011F9  2               ; outputs: All regs destroyed
+0011F9  2               ; calls  : WordOut
+0011F9  2               ; Uses: (zp) MemPtr (2 bytes)
+0011F9  2               ;--------------------------------------------------
+0011F9  2               
+0011F9  2               Word32Out:
+0011F9  2  85 24                sta MemPtr
+0011FB  2  86 25                stx MemPtr+1
+0011FD  2               
+0011FD  2  A0 03                ldy #3
+0011FF  2  B1 24                lda (MemPtr),y       ; MSB
+001201  2               
+001201  2  AA                   tax
+001202  2  88                   dey
+001203  2  B1 24                lda (MemPtr),y       ; LSB
+001205  2               
+001205  2  20 14 12             jsr WordOut
+001208  2               
+001208  2  A0 01                ldy #1
+00120A  2  B1 24                lda (MemPtr),y       ; MSB
+00120C  2               
+00120C  2  AA                   tax
+00120D  2  88                   dey
+00120E  2  B1 24                lda (MemPtr),y       ; LSB
+001210  2               
+001210  2  20 14 12             jsr WordOut
+001213  2  60                   rts
+001214  2               
+001214  2               ;----------------------------------------------
+001214  2               ; WordOut - prints a given word in hexadecimal
+001214  2               ;
+001214  2               ; inputs : a,x = word to print l,h
+001214  2               ; outputs: a reg destroyed
+001214  2               ; uses   : none
+001214  2               ; calls  : ByteOut
+001214  2               ; notes  : none
+001214  2               
+001214  2               WordOut:
+001214  2  48           	pha                    	 ; save low byte
+001215  2  8A           	txa
+001216  2  20 24 12     	jsr     ByteOut          ; show high byte
+001219  2  68           	pla
+00121A  2  80 08        	bra     ByteOut          ; show low byte
+00121C  2               
+00121C  2               ;-----------------------------------------------------------
+00121C  2               ; Hex3Out - prints the hex value of 3 digit value
+00121C  2               ;
+00121C  2               ; inputs : a,x = 3 hex digits to print (l,h)
+00121C  2               ; outputs: a-reg = destroyed
+00121C  2               ; uses   : none
+00121C  2               ; calls  : CHROUT
+00121C  2               ; notes  : prints hex A-F in upper case
+00121C  2               Hex3Out:
+00121C  2               
+00121C  2  48            	pha                    	 ; save low byte
+00121D  2  8A           	txa
+00121E  2  20 2D 12     	jsr     prnibble0        ; low digit of high byte
+001221  2  68           	pla
+001222  2  80 00        	bra     ByteOut          ; show low byte
+001224  2               
+001224  2               ;-----------------------------------------------------------
+001224  2               ; ByteOut - prints the hex value of a given byte
+001224  2               ;
+001224  2               ; inputs : a-reg = byte to print
+001224  2               ; outputs: a-reg = destroyed
+001224  2               ; uses   : none
+001224  2               ; calls  : CHROUT
+001224  2               ; notes  : prints hex A-F in upper case
+001224  2               
+001224  2               ByteOut:
+001224  2  48           		pha                     ; save value
+001225  2  4A           		lsr                     ; spin hi nibble->low
+001226  2  4A           		lsr
+001227  2  4A           		lsr
+001228  2  4A           		lsr
+001229  2  20 2F 12     		jsr     prnibble        ; show high nibble
+00122C  2  68           		pla                     ; then low nibble...
+00122D  2               prnibble0:
+00122D  2  29 0F        		and     #$0f            ; form table index
+00122F  2               prnibble:
+00122F  2  DA                           phx
+001230  2  AA                           tax                     ; use digit number as index
+001231  2  BD 38 12                     lda hextab,x
+001234  2  FA                           plx
+001235  2               
+001235  2               		;clc
+001235  2               		;adc     #'0'
+001235  2               		;cmp     #'9'+1           ; need adjustment?
+001235  2               		;bcc     @noadj          ; taken if not (0-9)
+001235  2               		;adc     #6              ; 6 + set carry = 7
+001235  2               @noadj:
+001235  2  4C D2 FF     		jmp     CHROUT     	    ; preserves all regs
+001238  2               
+001238  2  30 31 32 33  hextab:	.byte	"0123456789ABCDEF"
+00123C  2  34 35 36 37  
+001240  2  38 39 C1 C2  
+001248  2               
+001248  2               ;-----------------------------------------------------
+001248  2               ; FileExists
+001248  2               ;
+001248  2               ; Written by Tony3068 and posted on Discord:
+001248  2               ; https://discord.com/channels/547559626024157184/629863245934755860/1359286644150108374
+001248  2               ;
+001248  2               ;   On Entry:   A   = length of name
+001248  2               ;               X,Y = pointer to filename string
+001248  2               ;   On Exit:  C = 0 - File exists
+001248  2               ;                 1 - File does NOT exist
+001248  2               ;             All other regs are preserved
+001248  2               ;
+001248  2               ; Note: The call setup is the same as SETNAM
+001248  2               ;-----------------------------------------------------
+001248  2               FileExists:
+001248  2               
+001248  2  48                   pha
+001249  2  DA                   phx
+00124A  2  5A                   phy
+00124B  2               
+00124B  2               ; Open and then immediately close the file:
+00124B  2  20 BD FF             jsr SETNAM
+00124E  2  A9 05                lda #FILE_EXISTS_LFN        ; LFN
+001250  2  A2 08                ldx #8                      ; Device
+001252  2  A8                   tay                         ; Use LFN as secondary
+001253  2  20 BA FF             jsr SETLFS
+001256  2  20 C0 FF             jsr OPEN
+001259  2  A9 05                lda #FILE_EXISTS_LFN       ; LFN
+00125B  2  20 C3 FF             jsr CLOSE
+00125E  2               
+00125E  2               ; Open the error channel and check the result:
+00125E  2  A9 00                lda #0
+001260  2  A2 A9                ldx #<Dummy_name
+001262  2  A0 12                ldy #>Dummy_name
+001264  2  20 BD FF             jsr SETNAM
+001267  2  A9 0F                lda #15
+001269  2  A2 08                ldx #8
+00126B  2  A0 0F                ldy #15
+00126D  2  20 BA FF             jsr SETLFS       ; All regs preserved
+001270  2  20 C0 FF             jsr OPEN
+001273  2               
+001273  2  A2 0F                ldx #15
+001275  2  20 C6 FF             jsr CHKIN        ; Destroys all regs, but it is OK
+001278  2  20 E4 FF             jsr GETIN
+00127B  2  C9 30                cmp #'0'
+00127D  2  D0 07                bne _NotFound
+00127F  2  20 E4 FF             jsr GETIN
+001282  2  C9 30                cmp #'0'
+001284  2  F0 0B                beq _Found
+001286  2               
+001286  2               _NotFound:
+001286  2  20 9C 12             jsr _flushchars
+001289  2  20 CC FF             jsr CLRCHN
+00128C  2  7A                   ply
+00128D  2  FA                   plx
+00128E  2  68                   pla
+00128F  2  38                   sec
+001290  2  60                   rts
+001291  2               
+001291  2               _Found:
+001291  2  20 9C 12             jsr _flushchars
+001294  2  20 CC FF             jsr CLRCHN
+001297  2  7A                   ply
+001298  2  FA                   plx
+001299  2  68                   pla
+00129A  2  18                   clc
+00129B  2  60                   rts
+00129C  2               
+00129C  2               ; Clear the rest of the error message:
+00129C  2               _flushchars:
+00129C  2  20 E4 FF             jsr GETIN
+00129F  2  C9 0D                cmp #13
+0012A1  2  D0 F9                bne _flushchars
+0012A3  2  A9 0F                lda #15
+0012A5  2  20 C3 FF             jsr CLOSE
+0012A8  2  60                   rts
+0012A9  2               
+0012A9  2               ; dummy file name target
+0012A9  2               Dummy_name:
+0012A9  2  00               .byte 0
+0012AA  2               
+0012AA  2               
+0012AA  2               ; ca65 compatibility:
+0012AA  2  xx xx        num:   .res 2       ; Numerator
+0012AC  2  xx xx        quot:  .res 2       ; Quotient
+0012AE  2  xx           rem :  .res 1       ; Remander
+0012AF  2               
+0012AF  2  93 0E        HelloWriteStr:    .byte CLS,PETSCII_UL
+0012B1  2               ;-this is an alignment helper-------------->    v0.1 |
+0012B1  2  2B 2D 2D 2D                    .byte "+---------------------------+",CR
+0012B5  2  2D 2D 2D 2D  
+0012B9  2  2D 2D 2D 2D  
+0012CF  2  DD 20 D7 52                    .byte "| Write Sector Utility v",VERS_MAJOR+'0','.',VERS_MINOR+'0'," |",CR
+0012D3  2  49 54 45 20  
+0012D7  2  D3 45 43 54  
+0012ED  2  2B 2D 2D 2D                    .byte "+---------------------------+",CR,CR,$00
+0012F1  2  2D 2D 2D 2D  
+0012F5  2  2D 2D 2D 2D  
+00130D  2               
+00130D  2  93 0E        HelloReadStr:    .byte CLS,PETSCII_UL
+00130F  2               ;-this is an alignment helper---------------->   v0.1 |
+00130F  2  2B 2D 2D 2D                    .byte "+----------------------------+",CR
+001313  2  2D 2D 2D 2D  
+001317  2  2D 2D 2D 2D  
+00132E  2  DD 20 D2 45                    .byte "| Read Sector Utility 2 v",VERS_MAJOR+'0','.',VERS_MINOR+'0'," |",CR
+001332  2  41 44 20 D3  
+001336  2  45 43 54 4F  
+00134D  2  2B 2D 2D 2D                    .byte "+----------------------------+",CR,CR,$00
+001351  2  2D 2D 2D 2D  
+001355  2  2D 2D 2D 2D  
+00136E  2               
+00136E  2               
+00136E  2  0D C5 CE D4  Input_help_msg:   .byte CR,"ENTER for default(*) or ESC to exit:",CR,CR,$00
+001372  2  C5 D2 20 46  
+001376  2  4F 52 20 44  
+001396  2               
+001396  2  0D C5 4E 44  ByeStr:          .byte CR,"End of run. Have a great day.",CR,CR,$00
+00139A  2  20 4F 46 20  
+00139E  2  52 55 4E 2E  
+0013B7  2               
+0013B7  2  C8 4F 57 20  HowMany_prompt:  .byte "How many sectors (500*) (1-65535)?",$00
+0013BB  2  4D 41 4E 59  
+0013BF  2  20 53 45 43  
+0013DA  2  D2 45 41 44  ReadMethod_prompt:  .byte "Read method: (C)CHRIN (M*)MACPTR (S)SDCARD?",$00
+0013DE  2  20 4D 45 54  
+0013E2  2  48 4F 44 3A  
+001406  2               
+001406  2  53 45 43 2E  DEFAULT_FNAME:   .byte "sec.dat",$00    ; NOTE: *** change FileName_prompt to match this
+00140A  2  44 41 54 00  
+00140E  2  53 45 43 2E  DEFAULT_LOG_FNAME: .byte "sec.log",$00  ; NOTE: *** change LogFileName_prompt to match this
+001412  2  4C 4F 47 00  
+001416  2               
+001416  2  0D C4 41 54  FileName_prompt:    .byte CR,"Data file name (sec.dat*)?",$00
+00141A  2  41 20 46 49  
+00141E  2  4C 45 20 4E  
+001432  2  0D 20 CC 4F  LogFileName_prompt: .byte CR," Log file name (sec.log*)?",$00
+001436  2  47 20 46 49  
+00143A  2  4C 45 20 4E  
+00144E  2               
+00144E  2  D9 28 2A 29  YN_prompt:      .byte "Y(*)/n",$00
+001452  2  2F 4E 00     
+001455  2               
+001455  2               ; Formatted for write params:
+001455  2  0D 0D D3 45  nSectors_review:   .byte CR,CR,"Sectors  :",$00
+001459  2  43 54 4F 52  
+00145D  2  53 20 20 3A  
+001462  2  C6 49 4C 45  FileName_review:   .byte       "File name:",$00
+001466  2  20 4E 41 4D  
+00146A  2  45 3A 00     
+00146D  2               
+00146D  2               ; Formatted for read params:
+00146D  2  0D 0D D2 45  ReadMethod_review:  .byte CR,CR,"Read method   :",$00
+001471  2  41 44 20 4D  
+001475  2  45 54 48 4F  
+00147F  2  C4 41 54 41  FileName_review2:   .byte    "Data file name:",$00
+001483  2  20 46 49 4C  
+001487  2  45 20 4E 41  
+00148F  2  20 CC 4F 47  LogFileName_review: .byte    " Log file name:",$00
+001493  2  20 46 49 4C  
+001497  2  45 20 4E 41  
+00149F  2               
+00149F  2  C3 C8 D2 C9  ReadMethod_CHRIN:       .byte "CHRIN",$00
+0014A3  2  CE 00        
+0014A5  2  CD C1 C3 D0  ReadMethod_MACPTR:      .byte "MACPTR",$00
+0014A9  2  D4 D2 00     
+0014AC  2  D3 C4 C3 C1  ReadMethod_SDCARD:      .byte "SDCARD",$00
+0014B0  2  D2 C4 00     
+0014B3  2               
+0014B3  2  C4 41 54 41  overwrite_msgD: .byte "Data file ",DQ,$00
+0014B7  2  20 46 49 4C  
+0014BB  2  45 20 22 00  
+0014BF  2  CC 4F 47 20  overwrite_msgL: .byte "Log file ",DQ,$00
+0014C3  2  46 49 4C 45  
+0014C7  2  20 22 00     
+0014CA  2  22 20 41 4C  overwrite_msg1: .byte DQ," already exists. Overwrite it Y(*)/n?",$00
+0014CE  2  52 45 41 44  
+0014D2  2  59 20 45 58  
+0014F1  2               
+0014F1  2  C4 C1 D4 C1  nofile_msg: .byte "DATA FILE DOES NOT EXIST:",$00
+0014F5  2  20 C6 C9 CC  
+0014F9  2  C5 20 C4 CF  
+00150B  2               
+00150B  2  D7 52 49 54  writing_msg: .byte "Writing sectors to file, ESC to exit...",CR,CR,$00
+00150F  2  49 4E 47 20  
+001513  2  53 45 43 54  
+001535  2  D2 45 41 44  reading_msg: .byte "Reading and validating sectors from file...",CR,CR,$00
+001539  2  49 4E 47 20  
+00153D  2  41 4E 44 20  
+001563  2               
+001563  2  0D 0D D3 D4  Halt_msg:      .byte CR,CR,"STOPPED.",CR,$00
+001567  2  CF D0 D0 C5  
+00156B  2  C4 2E 0D 00  
+00156F  2  0D 0D D3 C5  read_err_msg0: .byte CR,CR,"SECTOR $",$00
+001573  2  C3 D4 CF D2  
+001577  2  20 24 00     
+00157A  2  20 D2 C5 C1  read_err_msg1: .byte" READ ERROR.",CR,$00
+00157E  2  C4 20 C5 D2  
+001582  2  D2 CF D2 2E  
+001588  2               
+001588  2  20 24 00     sector_msg0: .byte " $",$00
+00158B  2  3A 20 24 00  sector_msg1: .byte ": $",$00
+00158F  2  20 2D 3E 20  sector_msg2: .byte " -> $",$00
+001593  2  24 00        
+001595  2  0D 00        sector_msg3: .byte CR,$00
+001597  2               
+001597  2  C4 41 54 41  log_file_msg0:         .byte "Data file:",$00
+00159B  2  20 46 49 4C  
+00159F  2  45 3A 00     
+0015A2  2  0D 0D 00     log_file_msg1:         .byte CR,CR,$00
+0015A5  2  0D D2 45 41  log_file_read_method0:  .byte CR,"Read method:",$00
+0015A9  2  44 20 4D 45  
+0015AD  2  54 48 4F 44  
+0015B3  2  0D 00        log_file_read_method1:  .byte CR,$00
+0015B5  2  0D D3 45 43  log_header_msg0:  .byte CR,"Sector $",$00
+0015B9  2  54 4F 52 20  
+0015BD  2  24 00        
+0015BF  2  2C 20 CC C2  log_header_msg1:  .byte ", LBA $",$00
+0015C3  2  C1 20 24 00  
+0015C7  2  0D 00        log_trailer_msg0: .byte CR,$00     ; For now
+0015C9  2  20 D3 49 5A  sector_size_err0: .byte " Size error. Read ",$00
+0015CD  2  45 20 45 52  
+0015D1  2  52 4F 52 2E  
+0015DC  2  20 42 59 54  sector_size_err1: .byte " bytes, expected ",$00
+0015E0  2  45 53 2C 20  
+0015E4  2  45 58 50 45  
+0015EE  2  20 42 59 54  sector_size_err2: .byte " bytes.",CR,$00
+0015F2  2  45 53 2E 0D  
+0015F6  2  00           
+0015F7  2               
+0015F7  2  20 00        log_errors_msg0:   .byte " ",$00
+0015F9  2  20 43 4F 4D  log_errors_msg1:   .byte " compare errors.",CR,$00
+0015FD  2  50 41 52 45  
+001601  2  20 45 52 52  
+00160B  2  20 43 4F 4D  log_errors_msgx:   .byte " compare error.",CR,$00 ; Yes, we went there.
+00160F  2  50 41 52 45  
+001613  2  20 45 52 52  
+00161C  2  CE 4F 20 45  log_no_errors_msg: .byte "No errors.",CR,$00
+001620  2  52 52 4F 52  
+001624  2  53 2E 0D 00  
+001628  2               
+001628  2  0D C6 C1 C9  Get_sector_buffer_addr_fail:     .byte CR,"FAILED to get sector_buffer address. Sorry.",CR,CR,$00
+00162C  2  CC C5 C4 20  
+001630  2  54 4F 20 47  
+001657  2  0D C6 C1 C9  Get_sector_LBA_addr_fail:        .byte CR,"FAILED to get sector_LBA address. Sorry.",CR,CR,$00
+00165B  2  CC C5 C4 20  
+00165F  2  54 4F 20 47  
+001683  2               
+001683  2               ; Strings used by OpenFileWrite:
+001683  2  40 3A 00     OverwriteStr:   .byte $40,$3A,$00       ; "@:" some assemblers don't encode this correctly
+001686  2  2C 53 2C 57  WriteModeStr:   .byte ",s,w",$00
+00168A  2  00           
+00168B  2  2C 53 2C 41  AppendModeStr:  .byte ",s,a",$00
+00168F  2  00           
+001690  2               
+001690  2               ;------------------
+001690  2               ; Buffers
+001690  2               ;------------------
+001690  2  xx xx xx xx  kbd_buf:        .res KBD_BUF_SIZE       ; Cant be smaller than the other buffers
+001694  2  xx xx xx xx  
+001698  2  xx xx xx xx  
+0016E0  2  xx xx xx xx  str_buf:        .res STR_BUF_SIZE
+0016E4  2  xx xx xx xx  
+0016E8  2  xx xx xx xx  
+001730  2  xx xx xx xx  fname_buf:      .res STR_BUF_SIZE
+001734  2  xx xx xx xx  
+001738  2  xx xx xx xx  
+001780  2  xx xx xx xx  log_fname_buf:  .res STR_BUF_SIZE
+001784  2  xx xx xx xx  
+001788  2  xx xx xx xx  
+0017D0  2  xx xx xx xx  cmd_buf:        .res STR_BUF_SIZE       ; For reading the command channel:
+0017D4  2  xx xx xx xx  
+0017D8  2  xx xx xx xx  
+001820  2               
+001820  2               write_sector_buf:
+001820  2  xx xx xx xx          .res SECTOR_SIZE
+001824  2  xx xx xx xx  
+001828  2  xx xx xx xx  
+001A20  2               
+001A20  2               read_sector_buf:
+001A20  2  xx xx xx xx          .res SECTOR_SIZE
+001A24  2  xx xx xx xx  
+001A28  2  xx xx xx xx  
+001C20  2               
+001C20  1               
