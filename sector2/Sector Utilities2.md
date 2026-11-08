@@ -1,4 +1,4 @@
-# Sector Utilities v0.1
+# Sector Utilities 2 v0.1
 
 The sector utilities are a pair of Commander X16 assembly language programs that are intended to help investigate unexpected operation of CX16 file IO functions. They are only relevant for testing on hardware. They are **NOT** compatible with the Calypso accessory.
 
@@ -9,13 +9,22 @@ Writes a data file containing a specified number of 512 byte sectors. Run with:
 ```
 Pressing RETURN uses default settings (marked with an asterisk).You can exit at any prompt by pressing ESC. During file creation, you can exit by pressing ESC or ctrl-C.
 
-## rsec.prg
-Reads data files created by wsec and compares the read data with the expected data. The program generates of log of differences. rsec can read the data using either CHRIN or MACPTR
+## rsec2.prg
+Reads data files created by wsec and compares the read data with the expected data. The program generates of log of differences. rsec2 can read the data using:
+* CHRIN
+* MACPTR
+* SDCARD
+
+NOTES:
+* `SDCARD` uses the KERNAL internal low-level function `sdcard_read_sector` and other internal data structures. If rsec2 fails with a "sorry" message, please let me know the details of your KERNAL version
+* `SDCARD` method logs both the sequential sector number and the file system's logical block address (LBA) for the sector
+* The log file shows a "no errors" message for sectors that were read and compared successsfully to help identify patterns in the failures
+
 
 ```
-^rsec.prg
+^rsec.2prg
 ```
-Pressing RETURN uses default settings (marked with an asterisk).You can exit at any prompt by pressing ESC. The CHRIN/MACPTR prompt determines which CX-16 KERNAL call will be used to read the sectors. You are asked for the name of the data file and the log file. During file read, you can exit by pressing ESC or ctrl-C. 
+Pressing RETURN uses default settings (marked with an asterisk).You can exit at any prompt by pressing ESC. The CHRIN/MACPTR/SDCARD prompt determines which CX-16 KERNAL call will be used to read the sectors. You are asked for the name of the data file and the log file. During file read, you can exit by pressing ESC or ctrl-C. 
 
 ## Building the Sector Utilities
 The programs were created using ca65. On Windows, build.bat builds both programs from a Command Shell:
