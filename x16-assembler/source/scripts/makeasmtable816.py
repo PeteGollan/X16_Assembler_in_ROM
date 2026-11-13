@@ -1,0 +1,228 @@
+# *******************************************************************************************
+# *******************************************************************************************
+#
+#       Name :      makeasmtable816.py
+#       Purpose :   Build the assembler information structure for 65C02/65C816.
+#       Date :      11th March 2025
+#       Author :    Paul Robson (paul@robsons.org.uk)
+#   	Modified by Pete Wyspianski (AKA Gollan petegollan@outlook.com)
+#       September 2026 for the X16-Assembler in ROM project
+#
+# *******************************************************************************************
+# *******************************************************************************************
+
+import os,sys,math,re
+
+# *******************************************************************************************
+#
+#                                   Single mnemonic class
+#
+# *******************************************************************************************
+
+class MnemonicBase(object):
+
+    def __init__(self,group,mnemonic,opcode,flags,operand):
+        self.group = group
+        self.mnemonic = mnemonic
+        self.opcode = opcode
+        self.flags = flags
+
+    def toString(self):
+        return "{0:4} ${2:02x} Group:{1}".format(
+            self.mnemonic,
+            self.group,
+            self.opcode
+        )
+
+    def getAuxData(self):
+        return 0
+
+    def getFlags(self):
+        return self.flags
+
+class Mnemonic(MnemonicBase):
+    pass
+
+class MnemonicGroup2(MnemonicBase):
+
+    def __init__(self,group,mnemonic,opcode,flags,operand):
+
+        MnemonicBase.__init__(
+            self,
+            group,
+            mnemonic,
+            opcode,
+            flags,
+            operand
+        )
+
+        operand = operand.strip().replace(" ","")
+
+        assert len(operand) == 8, \
+            "Bad selector on " + MnemonicBase.toString(self)
+
+        self.select = int(
+            operand.replace("-","0").replace("X","1"),
+            2
+        )
+
+    def toString(self):
+        return MnemonicBase.toString(self) + \
+               " Use:{0:08b}".format(self.select)
+
+    def getAuxData(self):
+        return self.select
+
+# *******************************************************************************************
+#
+#                                   Assembler Dictionary Class
+#
+# *******************************************************************************************
+
+class AssemblerDictionary(object):
+    def __init__(self):
+        self.objects = {}
+        self.fixes = []
+        self.load()
+
+    def load(self):
+        for s in open("opcodes/opcodes816.txt").readlines():
+
+            s = s.strip().upper().replace("\t"," ")
+
+            if not s.startswith(";") and s != "":
+
+                #
+                # New format:
+                #
+                # OPCODE FLAGS MNEMONIC GROUP OPERANDS
+                #
+                # Example:
+                #
+                # A1 00 LDA 1
+                #
+                m = re.match(
+                    "^([0-9A-F]+)\\s+([0-9A-F]+)\\s+(\\w+)\\s+(\\d)\\s*(.*)$",
+                    s
+                )
+
+                assert m is not None, "Bad entry '"+s+"'"
+
+                opcode   = int(m.group(1),16)
+                flags    = int(m.group(2),16)
+                mnemonic = m.group(3)
+                groupID  = int(m.group(4))
+                operand  = m.group(5)
+
+                if groupID == 5:
+
+                    m2 = re.match(
+                        "\\s*(\\*?)(\\d+)\\s*(.*)",
+                        operand
+                    )
+
+                    assert m2 is not None,"Bad table "+operand
+
+                    arec = self.objects[mnemonic]
+
+
+                    newFix = [
+                        mnemonic,
+                        arec.opcode,
+                        opcode,
+                        flags,
+                        int(m2.group(2),10)
+                        + (128 if m2.group(1) == '*' else 0),
+                        m2.group(3).strip()
+                    ]
+
+                    self.fixes.insert(0,newFix)
+
+                else:
+
+                    if groupID == 2:
+                        mnm = MnemonicGroup2(
+                            groupID,
+                            mnemonic,
+                            opcode,
+                            flags,
+                            operand.strip()
+                        )
+                    else:
+                        mnm = Mnemonic(
+                            groupID,
+                            mnemonic,
+                            opcode,
+                            flags,
+                            operand.strip()
+                        )
+
+                    assert mnemonic not in self.objects,\
+                        "Duplicate "+s
+
+                    self.objects[mnemonic] = mnm
+
+    def dumpFixupTable(self):
+         h = open("../assembler/generated/__fixups816.asm","w")
+         h.write(";\n;\tThis file is automatically generated.\n;\nAXGroup2OpcodeFixupTable816:\n")
+         h.write("\n\t; <opcode>, <addr mode>, <actual opcode>, <flags>, <comment>\n")
+         for f in self.fixes:
+            h.write(
+            "\t.byte ${0:02x}, ${1:02x}, ${2:02x}, ${3:02x} ; {4} {5}\n".format(
+            f[1], # base opcode
+            f[4], # addr mode
+            f[2], # actual opcode
+            f[3], # flags
+            f[0], # mnemonic
+            f[5] # comment
+            )
+         )
+         h.write("\t.byte\t0\n")
+         h.close()
+
+    def createDictionary(self):
+         h = open("../assembler/generated/__dictionary816.asm","w")
+         h.write(";\n;\tThis file is automatically generated.\n;\n\t.segment \"CODE\"\n\nAXSystemDictionary816:\n")
+
+         for k in self.objects.keys():
+             r = self.objects[k]
+             nameBytes = [ord(x) for x in r.mnemonic.upper()]
+             nameBytes[-1] |= 0x80
+             h.write("\t.byte\t{0}\n".format(len(r.mnemonic)+7))                 # offset
+             h.write("\t.byte\t${0:02x}\n".format(sum(nameBytes) & 0xFF))        # hash
+             h.write("\t.byte\t4\n") # type.
+             h.write(
+                 "\t.byte\t${0:02x}\n".format(
+                     r.getFlags()
+                 )
+             )
+             h.write("\t.byte\t{0},${1:02x}\n".format(r.group,r.opcode))         # data low (group) high (base opcode)
+             h.write("\t.byte\t${0:02x}\n".format(r.getAuxData()))               # data aux (select bits for group 2)
+             h.write("\t.byte\t{0:24} ; {1}\n".format(",".join(["${0:02x}".format(x) for x in nameBytes]),r.mnemonic))
+             h.write("\n")
+         self.createPsuedoOperations(h)          
+         h.write("\t.byte\t0\n")
+         h.close()
+
+    def createPsuedoOperations(self,h):
+        for root,dirs,files in os.walk("../assembler"):            
+            for f in [x for x in files if x.endswith(".asm")]:  
+                for s in open(root+os.sep+f).readlines():
+                    if s.find(";;") > 0 and s.find("{") > 0:        
+                        m = re.match("^(.*?)\\:\\s*\\;\\;\\s*\\{(.*?)\\}",s)
+                        assert m is not None,"Bad line "+s
+                        name = m.group(2).upper()
+                        nameBytes = [ord(x) for x in name.upper()]
+                        nameBytes[-1] |= 0x80
+                        h.write("\t.byte\t{0}\n".format(len(name)+7))                       # offset
+                        h.write("\t.byte\t${0:02x}\n".format(sum(nameBytes) & 0xFF))        # hash
+                        h.write("\t.byte\t2\n")                                             # type.
+                        h.write("\t.byte\t0\n")                                             # flags
+                        h.write("\t.word\t{0}\n".format(m.group(1)))                        # address
+                        h.write("\t.byte\t0\n")                                             # data aux (select bits for group 2)
+                        h.write("\t.byte\t{0:24} ; {1}\n".format(",".join(["${0:02x}".format(x) for x in nameBytes]),name))
+                        h.write("\n")
+
+ad = AssemblerDictionary()
+ad.dumpFixupTable()
+ad.createDictionary()
