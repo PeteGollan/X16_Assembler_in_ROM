@@ -1,7 +1,7 @@
 +--------------------------------------+
-| Commander X16 Assembler in ROM v0.06 |
+| Commander X16 Assembler in ROM v0.07 |
 +--------------------------------------+
-       Released October 16, 2026        
+       Released November 13, 2026        
 
 This is the manual for the 65C02/65C816 assembler integrated into the Commander X16 ROM.
 
@@ -10,7 +10,9 @@ https://codeberg.org/paulscottrobson/x16-assembler
 
 The Assembler in ROM project is the work of Pete Wyspianski (AKA Gollan petegollan@outlook.com)
 
-The source code for the integrated assembler will be published before it is officially released.
+The source code for the integrated assembler is available in the x16-assembler directory here:
+https://github.com/PeteGollan/X16_Assembler_in_ROM
+
 
 
 +---------------+
@@ -142,6 +144,7 @@ pseudo-operations are listed by category in the following tables:
 | .text [string|byte]   | Sequence of quoted strings (ASCII) or bytes, can be mixed                        |
 | .petscii [string|byte]| Same as .text, except it interprets quoted strings as mixed case PETSCII         |
 | .fill count[,value]   | Allocates an area of memory and optionally fills with specified value (also .ds) |
+| .res count[,value]    | Identical to .fill
 | .align value          | Puts on align byte boundary                                                      |
 +-----------------------+----------------------------------------------------------------------------------+
 
@@ -219,10 +222,9 @@ With the .noaddr option, the assembler omits the load address and requires BLOAD
 	...
 	BLOAD "moo.bin",8,1,$A000
 
--------
- .fill
--------
-
+--------------------
+ .fill .res and .ds
+--------------------
 Fill .fill accepts a count in the range 0-255 and an optional value parameter, also in the range 0-255.
 
 Fill has two modes of operation:
@@ -246,7 +248,10 @@ counter. The default fill value is zero, but an optional fill value may be speci
 	var5:	.fill 2,$aa		; Produces: $aa $aa
 	var6:	.fill 1			; Produces: $00
 	var7:	.fill 4,$99		; Produces: $99 $99 $99 $99 
-	
+
+To accomodate source code developed for other assemblers, .res and .ds are synonyms for .fill.
+
+
 ----------------------
  .include and .binary
 ----------------------
@@ -503,7 +508,7 @@ a syntax error in an include file can be quickly located by opening the file in 
 | Future Development |
 +--------------------+
 
-Focus for future releases be activites to support official ROM inclusion.
+Focus for future releases will be activites to support official ROM inclusion.
 
 Please share you ideas and suggestions.
 

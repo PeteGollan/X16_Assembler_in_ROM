@@ -1,5 +1,5 @@
-# **TEST RELEASE "k" of Commander X16 Assembler in ROM v0.06**
-October 16, 2026
+# **TEST RELEASE "l" of Commander X16 Assembler in ROM v0.07**
+November 13, 2026
 
 This repository contains demo KERNAL ROMs that have the X16-Assembler in ROM integrated. The assembler manual
 is the file "MANUAL.txt".
@@ -8,8 +8,8 @@ is the file "MANUAL.txt".
 
 |        File        |                                     Description                                         |
 |--------------------|-----------------------------------------------------------------------------------------|
-|**r49_tj.bin**      | R49 KERNAL ROM with Assembler test version "j"                                          |
-|**r49cwd_tj.bin**   | R49 KERNAL ROM with Assembler plus Calypso support with driver (cwd), test version "j"  |
+|**r49_tl.bin**      | R49 KERNAL ROM with Assembler test version "l"                                          |
+|**r49cwd_tl.bin**   | R49 KERNAL ROM with Assembler plus Calypso support with driver (cwd), test version "l"  |
 |**ad1.asm**         | Assembler demo #1                                                                       |
 |**asmbasic.bl**     | BASLOAD program demonstrates interacting with ASM from a BASIC program                  |
 |**asmdelta.bl**     | BASLOAD program demonstrates retrieving assembly time                                   |
@@ -18,6 +18,7 @@ is the file "MANUAL.txt".
 |**_prev_ROMs**      | Directory contains previously released ROMs                                             |
 |**testing**         | Directory contains programs that test and demonstrate various assembler functions       |
 |**learning**        | Directory contains programs to introduce the assembler and CX16 assembly programming    |
+|**x16-assembler**   | Directory contains the SOURCE CODE and BUILD ENVIRONMENT for the X16-Assembler          |
 |**MANUAL.txt**      | The Assembler-in-ROM manual                                                             |
 
   (More assembler demos will be released)
@@ -25,6 +26,14 @@ is the file "MANUAL.txt".
 Note:
 * ROM files have their original filenames embedded. Search "X16-Assembler" with a hex editor to check filename.
 * The BASIC "HELP" command lists the ASM TEST ROM that is installed (best viewed in ISO mode).
+
+## Changes from the "tk" ROMs:
+* Assembler version 0.07
+* Test ROM version "l"
+* Added .res as a synonym for .fill (in addition to .ds)
+* Fixed an issue that could cause unexpected errors with source files that are a multiple of 256 or 512 bytes in size
+* Source code ported from 64tass to ca65 for KERNAL build system compatibility
+* Source code and build environment included in directory "x16-assembler" (see "Building the Assembler Source" for information on building the assembler binary)
 
 ## Changes from the "tj" ROMs:
 * Assembler version 0.06
@@ -161,6 +170,11 @@ Alternatively:
 ```
 ^ASMDELTA.PRG
 ```
+
+## Building the Assembler Source
+
+To build the assembler source, open a command shell and navigate to x16-assembler. Ensure that python and that the cc65 binaries are in the toolchain. Enter "make build". The output is in x16-assembler\build. The assembler binary
+is "asm.bim".
 
 ## Calypso Support
 Calypso continues to be supported with the "cwd" (Calypso with driver) variant of the test ROMs.
